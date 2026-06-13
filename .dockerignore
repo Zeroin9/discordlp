@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+gradlew.bat
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Environment files
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+HELP.md
+*.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
