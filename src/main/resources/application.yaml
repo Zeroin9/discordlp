@@ -1,3 +1,7 @@
 spring:
   application:
     name: discordlp
+
+discord:
+  bot:
+    token: ${DISCORD_BOT_TOKEN}
