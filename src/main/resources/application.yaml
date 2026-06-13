@@ -8,8 +8,8 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update # На продакшене рекомендуется сменить на 'validate'
-    show-sql: true
+      ddl-auto: validate
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -18,3 +18,7 @@ spring:
 discord:
   bot:
     token: ${DISCORD_BOT_TOKEN}
+
+logging:
+  level:
+    root: INFO
