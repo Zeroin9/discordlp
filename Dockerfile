@@ -24,12 +24,6 @@ RUN ./gradlew build -x test --no-daemon
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# Create a non-root user for security
-RUN useradd -m -u 1000 -s /bin/bash appuser && \
-    chown -R appuser:appuser /app
-
-USER appuser
-
 # Copy the built JAR from the builder stage
 COPY --from=builder /workspace/app/build/libs/*.jar app.jar
 
