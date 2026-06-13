@@ -23,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LoyaltyPointsService {
 
-    private static final long CHECK_INTERVAL_SECONDS = 30L;
+    private static final long CHECK_INTERVAL_SECONDS = 300L;
     private static final long CHECK_INTERVAL_MS = CHECK_INTERVAL_SECONDS * 1_000L;
 
     private final JDA jda;
