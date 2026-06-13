@@ -32,6 +32,11 @@ public class LoyaltyPointsService {
 
     @Scheduled(fixedRate = CHECK_INTERVAL_MS)
     public void processLoyaltyPoints() {
+        if (jda.getStatus() != net.dv8tion.jda.api.JDA.Status.CONNECTED) {
+            log.warn("JDA не в статусе CONNECTED (текущий: {}). Пропуск начисления баллов во избежание блокировок кэша.", jda.getStatus());
+            return;
+        }
+        
         log.debug("Запуск периодической проверки начисления баллов лояльности...");
         try {
             List<Guild> guilds = jda.getGuilds();
