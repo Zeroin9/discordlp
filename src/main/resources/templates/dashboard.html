@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Дашборд участников гильдии</title>
+    <!-- Подключение Bootstrap CSS из WebJars -->
+    <link rel="stylesheet" th:href="@{/webjars/bootstrap/5.3.3/css/bootstrap.min.css}">
+    <style>
+        .pagination {
+            display: flex;
+            justify-content: center;
+            padding-left: 0;
+            list-style: none;
+        }
+        .page-item.disabled .page-link {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+<div class="container mt-4">
+    <h1 class="mb-4">Таблица участников гильдии</h1>
+
+    <!-- Таблица с данными -->
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+        <tr>
+            <th scope="col">#</th>
+            <th scope="col">Имя пользователя</th>
+            <th scope="col">Название гильдии</th>
+            <th scope="col">Баланс LP</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="member, iterStat : ${guildMembers}">
+            <th scope="row" th:text="${iterStat.index + 1 + currentPage * pageSize}"></th>
+            <td th:text="${member.userName}">Имя пользователя</td>
+            <td th:text="${member.guildName}">Название гильдии</td>
+            <td th:text="${member.balance}">Баланс</td>
+        </tr>
+        <!-- Сообщение, если нет данных -->
+        <tr th:if="${guildMembers.isEmpty()}">
+            <td colspan="4" class="text-center">Нет данных для отображения</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <!-- Пагинация -->
+    <nav aria-label="Навигация по страницам" th:if="${totalPages > 1}">
+        <ul class="pagination">
+            <!-- Предыдущая страница -->
+            <li class="page-item" th:classappend="${currentPage == 0} ? 'disabled'">
+                <a class="page-link" th:href="@{/dashboard(page=${currentPage - 1}, size=${pageSize}, sort=${sort})}" 
+                   aria-label="Предыдущая">
+                    <span aria-hidden="true">&laquo;</span>
+                </a>
+            </li>
+
+            <!-- Номера страниц -->
+            <li class="page-item" th:each="i : ${#numbers.sequence(0, totalPages - 1)}"
+                th:classappend="${i == currentPage} ? 'active'">
+                <a class="page-link" th:href="@{/dashboard(page=${i}, size=${pageSize}, sort=${sort})}"
+                   th:text="${i + 1}">1</a>
+            </li>
+
+            <!-- Следующая страница -->
+            <li class="page-item" th:classappend="${currentPage + 1 >= totalPages} ? 'disabled'">
+                <a class="page-link" th:href="@{/dashboard(page=${currentPage + 1}, size=${pageSize}, sort=${sort})}" 
+                   aria-label="Следующая">
+                    <span aria-hidden="true">&raquo;</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</div>
+
+<!-- Подключение jQuery и Bootstrap JS из WebJars (необязательно для этого примера, но может понадобиться для интерактивности) -->
+<script th:src="@{/webjars/jquery/3.7.1/jquery.min.js}"></script>
+<script th:src="@{/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js}"></script>
+</body>
+</html>

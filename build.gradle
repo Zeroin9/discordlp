@@ -27,6 +27,10 @@ dependencies {
 		exclude module: 'opus-java' // required for encoding audio into opus, not needed if audio is already provided in opus encoding
 		exclude module: 'tink' // required for encrypting and decrypting audio
 	}
+	// WebJars for Bootstrap and jQuery
+	implementation 'org.webjars:bootstrap:5.3.3'
+	implementation 'org.webjars:jquery:3.7.1'
+	
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
