@@ -5,5 +5,6 @@ public enum TransactionReason {
     VOICE_STREAMER,
     VOICE_VIEWER,
     ADMIN_MANUAL,
-    ADMIN_REMOVE
+    ADMIN_REMOVE,
+    USER_KICK
 }
