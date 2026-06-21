@@ -1,6 +1,7 @@
 package ru.z3r0ing.discordlp.command;
 
 import lombok.RequiredArgsConstructor;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import org.jetbrains.annotations.NotNull;
@@ -13,6 +14,7 @@ import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
 import ru.z3r0ing.discordlp.service.GuildMemberService;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Component
 @RequiredArgsConstructor
@@ -36,12 +38,22 @@ public class LpKickCommand implements SlashCommandHandler {
 
     @Override
     public void handle(SlashCommandInteractionEvent event) {
-        var guild = event.getGuild();
-        User targetUser = event.getOption("user").getAsUser();
+        var guild = Objects.requireNonNull(event.getGuild());
+        Member targetMember = Objects.requireNonNull(event.getOption("user")).getAsMember();
         User caller = event.getUser();
 
-        if (targetUser.getId().equals(caller.getId())) {
-            event.reply("Вы не можете кикнуть самого себя.").setEphemeral(true).queue();
+        if (targetMember == null) {
+            event.reply("Участник не найден на сервере.").setEphemeral(true).queue();
+            return;
+        }
+
+        if (targetMember.getId().equals(caller.getId())) {
+            event.reply("Вы не можете отключить самого себя.").setEphemeral(true).queue();
+            return;
+        }
+
+        if (targetMember.getVoiceState() == null || !targetMember.getVoiceState().inAudioChannel()) {
+            event.reply("Пользователь не подключен к голосовому каналу.").setEphemeral(true).queue();
             return;
         }
 
@@ -64,11 +76,11 @@ public class LpKickCommand implements SlashCommandHandler {
         tx.setCreatedAt(Instant.now());
         pointsTransactionRepository.save(tx);
 
-        guild.kick(targetUser).queue(
-                success -> event.reply("Пользователь **" + targetUser.getName() + "** кикнут. Списано **" + KICK_COST + "** LP.")
+        guild.kickVoiceMember(targetMember).queue(
+                success -> event.reply("Пользователь **" + targetMember.getEffectiveName() + "** отключен от голосового канала. Списано **" + KICK_COST + "** LP.")
                         .setEphemeral(true)
                         .queue(),
-                failure -> event.reply("Не удалось кикнуть пользователя: " + failure.getMessage())
+                failure -> event.reply("Не удалось отключить пользователя: " + failure.getMessage())
                         .setEphemeral(true)
                         .queue()
         );

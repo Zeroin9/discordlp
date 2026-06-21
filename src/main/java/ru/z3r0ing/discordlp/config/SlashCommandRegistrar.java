@@ -33,8 +33,8 @@ public class SlashCommandRegistrar {
                         Commands.slash("lpremove", "Списать поинты у участника (только для администраторов)")
                                 .addOption(OptionType.USER, "user", "Участник для списания", true)
                                 .addOption(OptionType.INTEGER, "amount", "Количество поинтов", true),
-                        Commands.slash("lpkick", "Кикнуть участника за поинты (10000 LP)")
-                                .addOption(OptionType.USER, "user", "Участник для кика", true)
+                        Commands.slash("lpkick", "Отключить участника от голосового канала за поинты (10000 LP)")
+                                .addOption(OptionType.USER, "user", "Участник для отключения", true)
                 )
                 .queue(
                         success -> log.info("Slash команды успешно зарегистрированы."),
