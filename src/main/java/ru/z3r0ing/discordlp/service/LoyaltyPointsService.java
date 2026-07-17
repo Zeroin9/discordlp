@@ -20,6 +20,7 @@ import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -67,19 +68,17 @@ public class LoyaltyPointsService {
             try {
                 Guild guild = jda.getGuildById(muted.getGuildId());
                 if (guild == null) {
-                    mutedMemberRepository.delete(muted);
+                    log.error("Нет гильдии с ID {} для участника с ID {}", muted.getGuildId(), muted.getUserId());
                     continue;
                 }
 
                 Member member = guild.getMemberById(muted.getUserId());
                 if (member != null && member.getVoiceState() != null && member.getVoiceState().getChannel() != null) {
                     member.mute(false).queue(
-                            success -> log.debug("Автоматически снят мут с пользователя {} в гильдии {}", member.getEffectiveName(), guild.getName()),
+                            successMutedCallback(guild, member, muted),
                             failure -> log.error("Не удалось снять мут с пользователя {} в гильдии {}", muted.getUserId(), guild.getName(), failure)
                     );
                 }
-
-                mutedMemberRepository.delete(muted);
             } catch (Exception e) {
                 log.error("Ошибка при снятии мута с пользователя {} в гильдии {}", muted.getUserId(), muted.getGuildId(), e);
             }
@@ -220,9 +219,17 @@ public class LoyaltyPointsService {
         }
     }
 
+    private Consumer<? super Void> successMutedCallback(Guild guild, Member member, MutedMember muted) {
+        return v -> {  // v — это null
+            log.debug("Автоматически снят мут с пользователя {} в гильдии {}",
+                    member.getEffectiveName(), guild.getName());
+            mutedMemberRepository.delete(muted);
+        };
+    }
+
     /**
-         * Вспомогательный класс для хранения информации о баллах
-         */
-        private record PointsInfo(int pointsToAdd, TransactionReason reason) {
+     * Вспомогательный класс для хранения информации о баллах
+     */
+    private record PointsInfo(int pointsToAdd, TransactionReason reason) {
     }
 }
