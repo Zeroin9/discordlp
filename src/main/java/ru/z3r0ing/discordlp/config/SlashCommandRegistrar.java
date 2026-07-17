@@ -34,7 +34,9 @@ public class SlashCommandRegistrar {
                                 .addOption(OptionType.USER, "user", "Участник для списания", true)
                                 .addOption(OptionType.INTEGER, "amount", "Количество поинтов", true),
                         Commands.slash("lpkick", "Отключить участника от голосового канала за поинты (10000 LP)")
-                                .addOption(OptionType.USER, "user", "Участник для отключения", true)
+                                .addOption(OptionType.USER, "user", "Участник для отключения", true),
+                        Commands.slash("lpmute", "Замьютить участника в голосовом канале за поинты (50000 LP)")
+                                .addOption(OptionType.USER, "user", "Участник для мьюта", true)
                 )
                 .queue(
                         success -> log.info("Slash команды успешно зарегистрированы."),

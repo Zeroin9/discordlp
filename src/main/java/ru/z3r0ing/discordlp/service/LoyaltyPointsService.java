@@ -10,9 +10,11 @@ import net.dv8tion.jda.api.entities.channel.concrete.VoiceChannel;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import ru.z3r0ing.discordlp.entity.GuildMember;
+import ru.z3r0ing.discordlp.entity.MutedMember;
 import ru.z3r0ing.discordlp.entity.PointsTransaction;
 import ru.z3r0ing.discordlp.entity.TransactionReason;
 import ru.z3r0ing.discordlp.repository.GuildMemberRepository;
+import ru.z3r0ing.discordlp.repository.MutedMemberRepository;
 import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
 
 import java.time.Instant;
@@ -30,6 +32,7 @@ public class LoyaltyPointsService {
     private final JDA jda;
     private final GuildMemberRepository guildMemberRepository;
     private final PointsTransactionRepository pointsTransactionRepository;
+    private final MutedMemberRepository mutedMemberRepository;
 
     @Scheduled(fixedRate = CHECK_INTERVAL_MS)
     public void processLoyaltyPoints() {
@@ -40,6 +43,8 @@ public class LoyaltyPointsService {
         
         log.debug("Запуск периодической проверки начисления баллов лояльности...");
         try {
+            unmuteExpiredMembers();
+
             List<Guild> guilds = jda.getGuilds();
             for (Guild guild : guilds) {
                 try {
@@ -50,6 +55,34 @@ public class LoyaltyPointsService {
             }
         } catch (Exception e) {
             log.error("Критическая ошибка в процессе начисления баллов лояльности", e);
+        }
+    }
+
+    private void unmuteExpiredMembers() {
+        Instant now = Instant.now();
+        Instant threshold = now.minusSeconds(CHECK_INTERVAL_SECONDS);
+        List<MutedMember> expiredMutes = mutedMemberRepository.findByMutedAtBefore(threshold);
+
+        for (MutedMember muted : expiredMutes) {
+            try {
+                Guild guild = jda.getGuildById(muted.getGuildId());
+                if (guild == null) {
+                    mutedMemberRepository.delete(muted);
+                    continue;
+                }
+
+                Member member = guild.getMemberById(muted.getUserId());
+                if (member != null && member.getVoiceState() != null && member.getVoiceState().getChannel() != null) {
+                    member.mute(false).queue(
+                            success -> log.debug("Автоматически снят мут с пользователя {} в гильдии {}", member.getEffectiveName(), guild.getName()),
+                            failure -> log.error("Не удалось снять мут с пользователя {} в гильдии {}", muted.getUserId(), guild.getName(), failure)
+                    );
+                }
+
+                mutedMemberRepository.delete(muted);
+            } catch (Exception e) {
+                log.error("Ошибка при снятии мута с пользователя {} в гильдии {}", muted.getUserId(), muted.getGuildId(), e);
+            }
         }
     }
 
