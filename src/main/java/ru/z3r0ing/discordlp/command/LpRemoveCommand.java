@@ -57,6 +57,7 @@ public class LpRemoveCommand implements SlashCommandHandler {
         tx.setMember(targetMember);
         tx.setAmount(-amount);
         tx.setReason(TransactionReason.ADMIN_REMOVE);
+        tx.setInitiatedBy(event.getUser().getId());
         tx.setCreatedAt(Instant.now());
         pointsTransactionRepository.save(tx);
 

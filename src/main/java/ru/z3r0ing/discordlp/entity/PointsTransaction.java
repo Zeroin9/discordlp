@@ -41,6 +41,9 @@ public class PointsTransaction {
     @Column(name = "reason", nullable = false)
     private TransactionReason reason;
 
+    @Column(name = "initiated_by")
+    private String initiatedBy;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 }
