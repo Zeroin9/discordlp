@@ -14,6 +14,7 @@ Hibernate работает в режиме `ddl-auto: validate` и схему н
 | `V3__add_muted_members.sql` | `muted_members` |
 | `V4__add_pari.sql` | `paris`, `pari_bets`, `points_transactions.reference_id`, `CHECK (balance >= 0)` |
 | `V5__pari_coefficient.sql` | Итоги розыгрыша в `paris`, `commission_rate`, расширение `points_transactions.amount` до `BIGINT` |
+| `V6__pari_results_message.sql` | `paris.results_posted_at` — отметка о публикации сводки выплат |
 
 Flyway настроен с `baselineOnMigrate = true`, поэтому подключается и к существующей базе.
 
@@ -87,6 +88,7 @@ Flyway настроен с `baselineOnMigrate = true`, поэтому подкл
 | `created_at` | `TIMESTAMPTZ` | |
 | `closed_at` | `TIMESTAMPTZ` | Переход в терминальный статус |
 | `settled_at` | `TIMESTAMPTZ` | Расчет доведен до конца; `NULL` — пари ждет дорасчета |
+| `results_posted_at` | `TIMESTAMPTZ` | Сводка выплат отправлена в канал; `NULL` — еще не отправлена |
 
 Индекс по `status` обслуживает выборку планировщиков.
 

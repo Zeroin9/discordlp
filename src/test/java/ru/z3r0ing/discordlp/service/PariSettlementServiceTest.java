@@ -61,6 +61,18 @@ class PariSettlementServiceTest {
         verify(pariPayoutProcessor).settleBet(11L);
         verify(pariPayoutProcessor).settleBet(12L);
         assertThat(pari.getSettledAt()).isNotNull();
+        verify(pariMessageService).publishResults(1L);
+    }
+
+    @Test
+    void unfinishedSettlementDoesNotPublishResults() {
+        when(pariBetRepository.findUnsettledBetIds(eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(10L));
+        when(pariPayoutProcessor.settleBet(10L)).thenThrow(new IllegalStateException("boom"));
+
+        settlementService.settle(1L);
+
+        verify(pariMessageService, never()).publishResults(anyLong());
     }
 
     @Test

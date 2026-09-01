@@ -7,6 +7,7 @@ import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.modals.Modal;
+import net.dv8tion.jda.api.requests.restaction.MessageCreateAction;
 import net.dv8tion.jda.api.requests.restaction.MessageEditAction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,16 +17,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import ru.z3r0ing.discordlp.entity.GuildMember;
 import ru.z3r0ing.discordlp.entity.Pari;
+import ru.z3r0ing.discordlp.entity.PariBet;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -265,6 +271,197 @@ class PariMessageServiceTest {
         when(jda.getChannelById(eq(MessageChannel.class), anyString())).thenReturn(null);
 
         pariMessageService.refresh(1L);
+    }
+
+    // --- сводка выплат ---
+
+    @Test
+    void resultsEmbedShowsMentionsBetsAndPayouts() {
+        Pari pari = finishedPari();
+        List<PariBet> bets = List.of(bet("user-1", true, 300L, 570L), bet("user-2", false, 500L, 0L));
+
+        MessageEmbed embed = pariMessageService.buildResultsEmbed(pari, bets);
+
+        assertThat(embed.getTitle()).contains("Итоги пари").contains("Победит ли команда?");
+        assertThat(embed.getDescription())
+                .contains("Победил вариант «Да»").contains("1.90")
+                .contains("950").contains("1000").contains("комиссия").contains("50 LP");
+        assertThat(embed.getFields()).hasSize(2);
+        assertThat(embed.getFields().get(0).getName()).contains("Победители").contains("(1)");
+        assertThat(embed.getFields().get(0).getValue())
+                .contains("<@user-1>").contains("300 LP").contains("570").contains("+270");
+        assertThat(embed.getFields().get(1).getName()).contains("Проигравшие").contains("(1)");
+        assertThat(embed.getFields().get(1).getValue())
+                .contains("<@user-2>").contains("500 LP").contains("−500");
+        assertThat(embed.getFooter().getText()).contains("2 участников").contains("800 LP");
+    }
+
+    @Test
+    void resultsEmbedSortsWinnersByPayout() {
+        Pari pari = finishedPari();
+        List<PariBet> bets = List.of(bet("small", true, 100L, 190L), bet("big", true, 400L, 760L));
+
+        String winners = pariMessageService.buildResultsEmbed(pari, bets).getFields().get(0).getValue();
+
+        assertThat(winners.indexOf("<@big>")).isLessThan(winners.indexOf("<@small>"));
+    }
+
+    @Test
+    void canceledPariShowsRefundsOnly() {
+        Pari pari = pari(PariStatus.CANCELED, null);
+        pari.setSettledAt(Instant.now());
+        List<PariBet> bets = List.of(bet("user-1", true, 300L, 300L), bet("user-2", false, 500L, 500L));
+
+        MessageEmbed embed = pariMessageService.buildResultsEmbed(pari, bets);
+
+        assertThat(embed.getDescription()).contains("отменено").contains("800");
+        assertThat(embed.getFields()).hasSize(1);
+        assertThat(embed.getFields().get(0).getName()).contains("Возврат");
+        assertThat(embed.getFields().get(0).getValue())
+                .contains("<@user-1>").contains("<@user-2>").contains("возврат");
+    }
+
+    @Test
+    void refundIsShownWhenNobodyBetOnTheWinningOption() {
+        Pari pari = finishedPari();
+        pari.setWinningSum(0L);
+        pari.setWinningCoefficient(null);
+
+        MessageEmbed embed = pariMessageService.buildResultsEmbed(pari, List.of(bet("user-1", false, 300L, 300L)));
+
+        assertThat(embed.getDescription()).contains("ставок на него не было");
+        assertThat(embed.getFields().get(0).getName()).contains("Возврат");
+    }
+
+    @Test
+    void longParticipantListIsFoldedIntoCounter() {
+        Pari pari = finishedPari();
+        List<PariBet> bets = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            bets.add(bet("user-" + i, true, 100L, 190L));
+        }
+
+        MessageEmbed.Field winners = pariMessageService.buildResultsEmbed(pari, bets).getFields().get(0);
+
+        assertThat(winners.getValue()).hasSizeLessThanOrEqualTo(1024);
+        assertThat(winners.getValue()).contains("и ещё");
+    }
+
+    // --- публикация сводки ---
+
+    @Test
+    void publishResultsRepliesToPariMessage() {
+        Pari pari = settledPariWithMessage();
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+        when(pariService.getBets(1L)).thenReturn(List.of(bet("user-1", true, 300L, 570L)));
+        when(pariService.claimResultsPublication(1L)).thenReturn(true);
+
+        MessageChannel channel = org.mockito.Mockito.mock(MessageChannel.class);
+        MessageCreateAction action = org.mockito.Mockito.mock(MessageCreateAction.class);
+        when(jda.getChannelById(eq(MessageChannel.class), anyString())).thenReturn(channel);
+        when(channel.sendMessageEmbeds(any(MessageEmbed.class), any(MessageEmbed[].class))).thenReturn(action);
+        when(action.setMessageReference(anyString())).thenReturn(action);
+        when(action.failOnInvalidReply(anyBoolean())).thenReturn(action);
+        when(action.mentionRepliedUser(anyBoolean())).thenReturn(action);
+
+        pariMessageService.publishResults(1L);
+
+        verify(action).setMessageReference("message-1");
+        verify(action).queue(any(), any());
+    }
+
+    @Test
+    void publishResultsIsSkippedWhenAlreadyPosted() {
+        Pari pari = settledPariWithMessage();
+        pari.setResultsPostedAt(Instant.now());
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+
+        pariMessageService.publishResults(1L);
+
+        verify(pariService, never()).claimResultsPublication(anyLong());
+        verify(jda, never()).getChannelById(eq(MessageChannel.class), anyString());
+    }
+
+    @Test
+    void publishResultsWaitsUntilSettlementIsComplete() {
+        Pari pari = settledPariWithMessage();
+        pari.setSettledAt(null);
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+
+        pariMessageService.publishResults(1L);
+
+        verify(pariService, never()).claimResultsPublication(anyLong());
+    }
+
+    @Test
+    void publishResultsIsSkippedWhenNobodyBet() {
+        Pari pari = settledPariWithMessage();
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+        when(pariService.getBets(1L)).thenReturn(List.of());
+
+        pariMessageService.publishResults(1L);
+
+        verify(pariService, never()).claimResultsPublication(anyLong());
+    }
+
+    @Test
+    void publishResultsDoesNotSendWhenClaimIsLost() {
+        Pari pari = settledPariWithMessage();
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+        when(pariService.getBets(1L)).thenReturn(List.of(bet("user-1", true, 300L, 570L)));
+        when(pariService.claimResultsPublication(1L)).thenReturn(false);
+
+        MessageChannel channel = org.mockito.Mockito.mock(MessageChannel.class);
+        when(jda.getChannelById(eq(MessageChannel.class), anyString())).thenReturn(channel);
+
+        pariMessageService.publishResults(1L);
+
+        verify(channel, never()).sendMessageEmbeds(any(MessageEmbed.class), any(MessageEmbed[].class));
+    }
+
+    @Test
+    void publishResultsSurvivesMissingChannel() {
+        Pari pari = settledPariWithMessage();
+        when(pariService.findById(1L)).thenReturn(Optional.of(pari));
+        when(pariService.getBets(1L)).thenReturn(List.of(bet("user-1", true, 300L, 570L)));
+        when(jda.getChannelById(eq(MessageChannel.class), anyString())).thenReturn(null);
+
+        pariMessageService.publishResults(1L);
+
+        // Право на публикацию не тратится: сводку еще можно будет отправить позже
+        verify(pariService, never()).claimResultsPublication(anyLong());
+    }
+
+    private static Pari finishedPari() {
+        Pari pari = pari(PariStatus.FINISHED, Boolean.TRUE);
+        pari.setTotalPool(1000L);
+        pari.setPrizePool(950L);
+        pari.setWinningSum(500L);
+        pari.setWinningCoefficient(new BigDecimal("1.9000"));
+        pari.setSettledAt(Instant.now());
+        return pari;
+    }
+
+    private static Pari settledPariWithMessage() {
+        Pari pari = finishedPari();
+        pari.setChannelId("channel-1");
+        pari.setMessageId("message-1");
+        return pari;
+    }
+
+    private static PariBet bet(String userId, boolean option, long amount, long payout) {
+        GuildMember member = new GuildMember();
+        member.setId(1L);
+        member.setGuildId("guild-1");
+        member.setUserId(userId);
+
+        PariBet bet = new PariBet();
+        bet.setMember(member);
+        bet.setOption(option);
+        bet.setAmount(amount);
+        bet.setPayout(payout);
+        bet.setSettled(true);
+        return bet;
     }
 
     private static List<Button> buttons(MessageTopLevelComponent row) {

@@ -29,6 +29,13 @@ public interface PariBetRepository extends JpaRepository<PariBet, Long> {
     @Query("SELECT b.id FROM PariBet b WHERE b.pari.id = :pariId AND b.settled = false ORDER BY b.id")
     List<Long> findUnsettledBetIds(@Param("pariId") Long pariId, Pageable pageable);
 
+    /**
+     * Все ставки пари вместе с участниками — для сводки выплат в чате.
+     * Участник подтягивается сразу, чтобы сообщение можно было собрать вне транзакции.
+     */
+    @Query("SELECT b FROM PariBet b JOIN FETCH b.member WHERE b.pari.id = :pariId ORDER BY b.id")
+    List<PariBet> findByPariIdWithMember(@Param("pariId") Long pariId);
+
     long countByPariIdAndOption(Long pariId, Boolean option);
 
     @Query("SELECT COALESCE(SUM(b.amount), 0) FROM PariBet b WHERE b.pari.id = :pariId AND b.option = :option")

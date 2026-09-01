@@ -103,6 +103,24 @@ public class PariService {
         );
     }
 
+    /** Ставки пари вместе с участниками — исходные данные для сводки выплат. */
+    @Transactional(readOnly = true)
+    public List<PariBet> getBets(Long pariId) {
+        return pariBetRepository.findByPariIdWithMember(pariId);
+    }
+
+    /**
+     * Резервирует право опубликовать сводку выплат по пари.
+     * Отметка ставится атомарным UPDATE, поэтому итоги уходят в канал ровно один раз,
+     * даже если расчет запустят параллельно кнопка и планировщик.
+     *
+     * @return {@code true}, если публиковать должен именно этот вызов
+     */
+    @Transactional
+    public boolean claimResultsPublication(Long pariId) {
+        return pariRepository.markResultsPosted(pariId, Instant.now()) > 0;
+    }
+
     @Transactional(readOnly = true)
     public Optional<PariBet> findBet(Long pariId, String guildId, String userId) {
         return guildMemberRepository.findByGuildIdAndUserId(guildId, userId)

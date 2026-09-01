@@ -84,4 +84,8 @@ public class Pari {
     /** Момент завершения расчета по всем ставкам. Пока null — расчет не доведен до конца. */
     @Column(name = "settled_at")
     private Instant settledAt;
+
+    /** Момент публикации сводки выплат в канале. Пока null — итоги в чат не отправлены. */
+    @Column(name = "results_posted_at")
+    private Instant resultsPostedAt;
 }
