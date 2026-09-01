@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.User;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import ru.z3r0ing.discordlp.repository.PariBetRepository;
 import ru.z3r0ing.discordlp.repository.PariRepository;
 import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,17 +31,18 @@ import java.util.Optional;
  * Прием ставки выполняется в единой транзакции под пессимистичными блокировками
  * строки пари и строки баланса участника, что исключает двойные траты при спам-кликах.
  * Начисление выигрышей вынесено в {@link PariSettlementService}.
+ * <p>
+ * Выплата определяется тотализатором: при объявлении исхода фиксируются общий пул,
+ * призовой фонд и сумма ставок на победивший вариант, а выигрыш каждой ставки — ее доля
+ * призового фонда (см. {@link PariPayoutCalculator}).
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PariService {
 
-    /** Множитель выплаты победителю: ставка возвращается и сверху начисляется 100%. */
-    public static final long WIN_MULTIPLIER = 2L;
-
     public static final long MIN_BET = 1L;
-    /** Верхняя граница ставки: выплата (ставка x2) должна умещаться в amount транзакции (INTEGER). */
+    /** Верхняя граница одной ставки — защита от опечаток вроде лишних нулей. */
     public static final long MAX_BET = 100_000_000L;
 
     public static final int MAX_TITLE_LENGTH = 200;
@@ -49,6 +52,10 @@ public class PariService {
     private final GuildMemberRepository guildMemberRepository;
     private final PointsTransactionRepository pointsTransactionRepository;
     private final GuildMemberService guildMemberService;
+
+    /** Доля комиссии организатора; фиксируется в пари при создании. */
+    @Value("${pari.commission-rate:0.05}")
+    private BigDecimal commissionRate;
 
     @Transactional
     public Pari createPari(Guild guild, User author, String title) {
@@ -66,6 +73,7 @@ public class PariService {
         pari.setAuthorName(author.getName());
         pari.setTitle(normalizedTitle);
         pari.setStatus(PariStatus.OPEN);
+        pari.setCommissionRate(normalizedCommissionRate());
         pari.setCreatedAt(Instant.now());
         return pariRepository.save(pari);
     }
@@ -166,7 +174,7 @@ public class PariService {
 
         PointsTransaction tx = new PointsTransaction();
         tx.setMember(lockedMember);
-        tx.setAmount(Math.toIntExact(-amount));
+        tx.setAmount(-amount);
         tx.setReason(TransactionReason.BET_HOLD);
         tx.setInitiatedBy(user.getId());
         tx.setReferenceId(pari.getId());
@@ -192,16 +200,37 @@ public class PariService {
     }
 
     /**
-     * Объявляет победивший вариант. Само начисление выполняется отдельно и идемпотентно
-     * в {@link PariSettlementService}, поэтому здесь только фиксируется исход.
+     * Объявляет победивший вариант и фиксирует итоги розыгрыша: общий пул, призовой фонд,
+     * сумму ставок на победивший вариант и коэффициент.
+     * <p>
+     * Итоги считаются ровно один раз — здесь, под блокировкой строки пари, когда новые ставки
+     * уже невозможны. Начисление выполняется отдельно и идемпотентно в
+     * {@link PariSettlementService}: расчет каждой ставки опирается только на сохраненные
+     * итоги, поэтому повторный запуск дает тот же результат.
      */
     @Transactional
     public Pari finish(Long pariId, String actorId, boolean winningOption) {
         Pari pari = lockForAuthor(pariId, actorId);
         requireActive(pari);
+
+        PariStats stats = getStats(pariId);
+        long totalPool = stats.totalPool();
+        long winningSum = winningOption ? stats.yesPool() : stats.noPool();
+        long prizePool = PariPayoutCalculator.prizePool(totalPool, pari.getCommissionRate());
+
         pari.setStatus(PariStatus.FINISHED);
         pari.setWinningOption(winningOption);
+        pari.setTotalPool(totalPool);
+        pari.setPrizePool(prizePool);
+        pari.setWinningSum(winningSum);
+        pari.setWinningCoefficient(PariPayoutCalculator.coefficient(prizePool, winningSum));
         pari.setClosedAt(Instant.now());
+
+        if (winningSum == 0) {
+            // Ставок на победивший вариант нет — делить призовой фонд не между кем,
+            // поэтому расчет вернет всем участникам их ставки.
+            log.info("В пари {} нет ставок на победивший вариант, средства будут возвращены", pariId);
+        }
         return pariRepository.save(pari);
     }
 
@@ -237,6 +266,23 @@ public class PariService {
             throw new PariException("Управлять пари может только его автор.");
         }
         return pari;
+    }
+
+    /** Текущие коэффициенты вариантов при действующей ставке комиссии. */
+    @Transactional(readOnly = true)
+    public PariOdds getOdds(Pari pari) {
+        return PariOdds.of(getStats(pari.getId()), pari.getCommissionRate());
+    }
+
+    private BigDecimal normalizedCommissionRate() {
+        if (commissionRate == null || commissionRate.signum() < 0) {
+            return BigDecimal.ZERO;
+        }
+        if (commissionRate.compareTo(BigDecimal.ONE) >= 0) {
+            log.warn("Комиссия {} вне диапазона [0, 1), используется 0", commissionRate);
+            return BigDecimal.ZERO;
+        }
+        return commissionRate;
     }
 
     private void requireActive(Pari pari) {

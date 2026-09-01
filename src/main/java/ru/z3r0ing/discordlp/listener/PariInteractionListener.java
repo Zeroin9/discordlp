@@ -15,6 +15,7 @@ import ru.z3r0ing.discordlp.entity.PariBet;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 import ru.z3r0ing.discordlp.service.PariException;
 import ru.z3r0ing.discordlp.service.PariMessageService;
+import ru.z3r0ing.discordlp.service.PariOdds;
 import ru.z3r0ing.discordlp.service.PariService;
 import ru.z3r0ing.discordlp.service.PariSettlementService;
 
@@ -89,9 +90,7 @@ public class PariInteractionListener extends ListenerAdapter {
         boolean option = componentId.option() != null && componentId.option();
         try {
             PariBet bet = pariService.placeBet(componentId.pariId(), guild, event.getUser(), option, amount);
-            hook.sendMessage("Ставка принята: **" + bet.getAmount() + "** LP на вариант «"
-                    + PariMessageService.optionName(option) + "». Возможный выигрыш: **"
-                    + bet.getAmount() * PariService.WIN_MULTIPLIER + "** LP.").queue();
+            hook.sendMessage(betAcceptedMessage(bet, option)).queue();
             pariMessageService.refresh(componentId.pariId());
         } catch (PariException e) {
             hook.sendMessage(e.getMessage()).queue();
@@ -99,6 +98,18 @@ public class PariInteractionListener extends ListenerAdapter {
             log.error("Ошибка при приеме ставки в пари {}", componentId.pariId(), e);
             hook.sendMessage("Не удалось принять ставку. Попробуйте еще раз.").queue();
         }
+    }
+
+    /**
+     * Коэффициент назван текущим не для красоты: он пересчитывается с каждой новой ставкой,
+     * поэтому итоговая выплата станет известна только при объявлении исхода.
+     */
+    private String betAcceptedMessage(PariBet bet, boolean option) {
+        PariOdds odds = pariService.getOdds(bet.getPari());
+        return "Ставка принята: **" + bet.getAmount() + "** LP на вариант «"
+                + PariMessageService.optionName(option) + "». Текущий коэффициент: **"
+                + PariMessageService.formatCoefficient(odds.coefficient(option))
+                + "**, он изменится с новыми ставками.";
     }
 
     private void openBetModal(ButtonInteractionEvent event, ComponentId componentId) {
@@ -141,12 +152,21 @@ public class PariInteractionListener extends ListenerAdapter {
             // Начисление идемпотентно: незавершенный расчет доведет планировщик.
             pariSettlementService.settle(pari.getId());
             event.getHook().editOriginal(pariMessageService.buildEditData(pari)).queue();
-            event.getHook().sendMessage("Пари завершено. Победил вариант «"
-                    + PariMessageService.optionName(winningOption) + "», выигрыши начислены.")
-                    .setEphemeral(true).queue();
+            event.getHook().sendMessage(finishedMessage(pari, winningOption)).setEphemeral(true).queue();
         } catch (PariException e) {
             event.getHook().sendMessage(e.getMessage()).setEphemeral(true).queue();
         }
+    }
+
+    private String finishedMessage(Pari pari, boolean winningOption) {
+        String winner = "Пари завершено. Победил вариант «"
+                + PariMessageService.optionName(winningOption) + "»";
+        if (pari.getWinningSum() == null || pari.getWinningSum() == 0) {
+            return winner + ", но ставок на него не было — средства возвращены участникам.";
+        }
+        return winner + ", коэффициент **"
+                + PariMessageService.formatCoefficient(pari.getWinningCoefficient())
+                + "**, выигрыши начислены.";
     }
 
     private void cancelPari(ButtonInteractionEvent event, ComponentId componentId) {

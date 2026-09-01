@@ -71,7 +71,7 @@ public class LpKickCommand implements SlashCommandHandler {
 
         PointsTransaction tx = new PointsTransaction();
         tx.setMember(callerMember);
-        tx.setAmount(-KICK_COST);
+        tx.setAmount((long) -KICK_COST);
         tx.setReason(TransactionReason.USER_KICK);
         tx.setCreatedAt(Instant.now());
         pointsTransactionRepository.save(tx);

@@ -22,6 +22,8 @@ import ru.z3r0ing.discordlp.entity.Pari;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 
 import java.awt.Color;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -91,20 +93,46 @@ public class PariMessageService {
 
     public MessageEmbed buildEmbed(Pari pari) {
         PariStats stats = pariService.getStats(pari.getId());
+        PariOdds odds = PariOdds.of(stats, pari.getCommissionRate());
 
         EmbedBuilder embed = new EmbedBuilder()
                 .setTitle("🎲 " + pari.getTitle())
                 .setDescription("Автор: <@" + pari.getAuthorId() + ">")
                 .setColor(statusColor(pari.getStatus()))
-                .addField("✅ Да", stats.yesCount() + " ставок\nПул: " + stats.yesPool() + " LP", true)
-                .addField("❌ Нет", stats.noCount() + " ставок\nПул: " + stats.noPool() + " LP", true)
-                .addField("Итого", stats.totalCount() + " участников\nПул: " + stats.totalPool() + " LP", true)
+                .addField("✅ Да", optionField(stats.yesCount(), stats.yesPool(), odds.yesCoefficient()), true)
+                .addField("❌ Нет", optionField(stats.noCount(), stats.noPool(), odds.noCoefficient()), true)
+                .addField("Итого", totalField(stats, odds, pari), true)
                 .setFooter(statusText(pari));
 
         if (pari.getCreatedAt() != null) {
             embed.setTimestamp(pari.getCreatedAt());
         }
         return embed.build();
+    }
+
+    private String optionField(long count, long pool, BigDecimal coefficient) {
+        return count + " ставок\nПул: " + pool + " LP\nКоэф.: " + formatCoefficient(coefficient);
+    }
+
+    private String totalField(PariStats stats, PariOdds odds, Pari pari) {
+        StringBuilder text = new StringBuilder()
+                .append(stats.totalCount()).append(" участников\n")
+                .append("Пул: ").append(stats.totalPool()).append(" LP");
+        if (odds.commission() > 0) {
+            text.append("\nКомиссия ").append(formatPercent(pari.getCommissionRate()))
+                    .append(": ").append(odds.commission()).append(" LP");
+        }
+        return text.toString();
+    }
+
+    /** Коэффициент в виде «1.85»; прочерк, если на вариант еще никто не поставил. */
+    public static String formatCoefficient(BigDecimal coefficient) {
+        return coefficient == null ? "—" : coefficient.setScale(2, RoundingMode.DOWN).toPlainString();
+    }
+
+    private static String formatPercent(BigDecimal rate) {
+        BigDecimal percent = (rate == null ? BigDecimal.ZERO : rate).multiply(BigDecimal.valueOf(100));
+        return percent.stripTrailingZeros().toPlainString() + "%";
     }
 
     public List<MessageTopLevelComponent> buildComponents(Pari pari) {
@@ -162,12 +190,20 @@ public class PariMessageService {
 
     private String statusText(Pari pari) {
         return switch (pari.getStatus()) {
-            case OPEN -> "Идет прием ставок · выигрыш x" + PariService.WIN_MULTIPLIER;
+            case OPEN -> "Идет прием ставок · коэффициенты меняются с каждой ставкой";
             case RESOLVING -> "Прием ставок остановлен, ожидаем итогов";
-            case FINISHED -> "Завершено · победил вариант «"
-                    + optionName(Boolean.TRUE.equals(pari.getWinningOption())) + "»";
+            case FINISHED -> finishedStatusText(pari);
             case CANCELED -> "Отменено · ставки возвращены участникам";
         };
+    }
+
+    private String finishedStatusText(Pari pari) {
+        String winner = "Завершено · победил вариант «"
+                + optionName(Boolean.TRUE.equals(pari.getWinningOption())) + "»";
+        if (pari.getWinningSum() != null && pari.getWinningSum() == 0) {
+            return winner + " · ставок на него не было, средства возвращены";
+        }
+        return winner + " · коэффициент " + formatCoefficient(pari.getWinningCoefficient());
     }
 
     private Color statusColor(PariStatus status) {

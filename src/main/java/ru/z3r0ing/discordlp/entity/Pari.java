@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Getter
@@ -46,6 +47,26 @@ public class Pari {
     /** Победивший вариант: true — «Да», false — «Нет», null — исход не объявлен. */
     @Column(name = "winning_option")
     private Boolean winningOption;
+
+    /** Доля комиссии организатора, зафиксированная при создании пари (например 0.0500 — 5%). */
+    @Column(name = "commission_rate", nullable = false, precision = 5, scale = 4)
+    private BigDecimal commissionRate = BigDecimal.ZERO;
+
+    /** Сумма всех ставок на момент объявления исхода. */
+    @Column(name = "total_pool")
+    private Long totalPool;
+
+    /** Призовой фонд: общий пул за вычетом комиссии. Делится между победителями. */
+    @Column(name = "prize_pool")
+    private Long prizePool;
+
+    /** Сумма ставок на победивший вариант. Ноль означает, что победителей нет. */
+    @Column(name = "winning_sum")
+    private Long winningSum;
+
+    /** Итоговый коэффициент победившего варианта, {@code null} — если победителей нет. */
+    @Column(name = "winning_coefficient", precision = 18, scale = 4)
+    private BigDecimal winningCoefficient;
 
     @Column(name = "channel_id")
     private String channelId;

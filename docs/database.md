@@ -13,6 +13,7 @@ Hibernate работает в режиме `ddl-auto: validate` и схему н
 | `V2__add_initiated_by.sql` | `points_transactions.initiated_by` |
 | `V3__add_muted_members.sql` | `muted_members` |
 | `V4__add_pari.sql` | `paris`, `pari_bets`, `points_transactions.reference_id`, `CHECK (balance >= 0)` |
+| `V5__pari_coefficient.sql` | Итоги розыгрыша в `paris`, `commission_rate`, расширение `points_transactions.amount` до `BIGINT` |
 
 Flyway настроен с `baselineOnMigrate = true`, поэтому подключается и к существующей базе.
 
@@ -41,7 +42,7 @@ Flyway настроен с `baselineOnMigrate = true`, поэтому подкл
 |---|---|---|
 | `id` | `BIGINT` PK | |
 | `member_id` | `BIGINT` FK → `guild_members` | Чей баланс изменился |
-| `amount` | `INTEGER` | Со знаком: списание отрицательное |
+| `amount` | `BIGINT` | Со знаком: списание отрицательное |
 | `reason` | `VARCHAR(255)` | Значение `TransactionReason` |
 | `initiated_by` | `VARCHAR(255)` | Discord-id инициатора действия |
 | `reference_id` | `BIGINT` | Id объекта-источника (для пари — `paris.id`) |
@@ -77,12 +78,23 @@ Flyway настроен с `baselineOnMigrate = true`, поэтому подкл
 | `title` | `VARCHAR(255)` | Название (в приложении обрезается до 200 символов) |
 | `status` | `VARCHAR(32)` | `OPEN`, `RESOLVING`, `FINISHED`, `CANCELED` |
 | `winning_option` | `BOOLEAN` | `true` — «Да», `false` — «Нет», `NULL` — исход не объявлен |
+| `commission_rate` | `NUMERIC(5,4)` | Доля комиссии, зафиксированная при создании пари |
+| `total_pool` | `BIGINT` | Сумма всех ставок на момент объявления исхода |
+| `prize_pool` | `BIGINT` | Призовой фонд: общий пул за вычетом комиссии |
+| `winning_sum` | `BIGINT` | Сумма ставок на победивший вариант; `0` — победителей нет |
+| `winning_coefficient` | `NUMERIC(18,4)` | Итоговый коэффициент, `NULL` — если победителей нет |
 | `channel_id`, `message_id` | `VARCHAR(255)` | Координаты сообщения-опроса для перерисовки |
 | `created_at` | `TIMESTAMPTZ` | |
 | `closed_at` | `TIMESTAMPTZ` | Переход в терминальный статус |
 | `settled_at` | `TIMESTAMPTZ` | Расчет доведен до конца; `NULL` — пари ждет дорасчета |
 
 Индекс по `status` обслуживает выборку планировщиков.
+
+Итоги розыгрыша (`total_pool`, `prize_pool`, `winning_sum`, `winning_coefficient`)
+заполняются один раз, при объявлении исхода, и служат единственным источником для расчета
+выплат — именно это делает расчет воспроизводимым и идемпотентным. `commission_rate`
+фиксируется при создании пари, поэтому изменение настройки не влияет на идущие пари.
+Подробнее — [pari.md](pari.md).
 
 ### `pari_bets`
 
@@ -96,7 +108,7 @@ Flyway настроен с `baselineOnMigrate = true`, поэтому подкл
 | `bet_option` | `BOOLEAN` | Выбранный вариант |
 | `amount` | `BIGINT` | Сумма ставки, `CHECK (amount > 0)` |
 | `settled` | `BOOLEAN` | Расчет по ставке выполнен — обеспечивает идемпотентность выплат |
-| `payout` | `BIGINT` | Фактически начислено: `2x`, `1x` или `0` |
+| `payout` | `BIGINT` | Фактически начислено: доля призового фонда, возврат ставки или `0` |
 | `created_at`, `settled_at` | `TIMESTAMPTZ` | |
 
 Колонка называется `bet_option`, а не `option`, чтобы не спорить с ключевыми словами SQL.

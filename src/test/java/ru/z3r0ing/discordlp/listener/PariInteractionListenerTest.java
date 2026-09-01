@@ -29,9 +29,11 @@ import ru.z3r0ing.discordlp.entity.PariBet;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 import ru.z3r0ing.discordlp.service.PariException;
 import ru.z3r0ing.discordlp.service.PariMessageService;
+import ru.z3r0ing.discordlp.service.PariOdds;
 import ru.z3r0ing.discordlp.service.PariService;
 import ru.z3r0ing.discordlp.service.PariSettlementService;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -209,12 +211,14 @@ class PariInteractionListenerTest {
     @Test
     void modalSubmissionPlacesBetAndRefreshesPoll() {
         ModalInteractionEvent event = modal("pari:bet:1:yes", BETTER_ID, "300");
-        when(pariService.placeBet(eq(1L), eq(guild), any(User.class), eq(true), eq(300L)))
-                .thenReturn(bet(300L, true));
+        PariBet placed = bet(300L, true);
+        when(pariService.placeBet(eq(1L), eq(guild), any(User.class), eq(true), eq(300L))).thenReturn(placed);
+        when(pariService.getOdds(placed.getPari()))
+                .thenReturn(new PariOdds(1_000L, 950L, new BigDecimal("1.9000"), new BigDecimal("1.9000")));
 
         listener.onModalInteraction(event);
 
-        assertThat(hookMessage(event)).contains("Ставка принята").contains("300").contains("600");
+        assertThat(hookMessage(event)).contains("Ставка принята").contains("300").contains("1.90");
         verify(pariMessageService).refresh(1L);
     }
 
@@ -296,13 +300,29 @@ class PariInteractionListenerTest {
     @Test
     void finishButtonSettlesAndAnnouncesWinner() {
         ButtonInteractionEvent event = button("pari:finish:1:yes", AUTHOR_ID);
-        when(pariService.finish(1L, AUTHOR_ID, true)).thenReturn(pari(PariStatus.FINISHED));
+        Pari finished = pari(PariStatus.FINISHED);
+        finished.setWinningSum(500L);
+        finished.setWinningCoefficient(new BigDecimal("1.9000"));
+        when(pariService.finish(1L, AUTHOR_ID, true)).thenReturn(finished);
 
         listener.onButtonInteraction(event);
 
         verify(pariSettlementService).settle(1L);
         verify(event.getHook()).editOriginal(any(MessageEditData.class));
-        assertThat(hookMessage(event)).contains("Пари завершено").contains("Да");
+        assertThat(hookMessage(event)).contains("Пари завершено").contains("Да").contains("1.90");
+    }
+
+    @Test
+    void finishButtonReportsRefundWhenNobodyPickedTheWinner() {
+        ButtonInteractionEvent event = button("pari:finish:1:yes", AUTHOR_ID);
+        Pari pari = pari(PariStatus.FINISHED);
+        pari.setWinningSum(0L);
+        when(pariService.finish(1L, AUTHOR_ID, true)).thenReturn(pari);
+
+        listener.onButtonInteraction(event);
+
+        verify(pariSettlementService).settle(1L);
+        assertThat(hookMessage(event)).contains("ставок на него не было").contains("возвращены");
     }
 
     @Test
@@ -453,6 +473,7 @@ class PariInteractionListenerTest {
 
         PariBet bet = new PariBet();
         bet.setId(10L);
+        bet.setPari(pari(PariStatus.OPEN));
         bet.setMember(member);
         bet.setAmount(amount);
         bet.setOption(option);

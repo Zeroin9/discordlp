@@ -20,6 +20,11 @@ import java.util.Objects;
  * Расчет по одной ставке. Вынесен в отдельный бин, чтобы каждая ставка обрабатывалась
  * в собственной транзакции: сбой на одном участнике не откатывает выплаты остальным.
  * <p>
+ * Выплата берется из итогов, зафиксированных в пари при объявлении исхода
+ * ({@code prize_pool} и {@code winning_sum}), и никогда не пересчитывается по текущему
+ * состоянию пула. Благодаря этому результат не зависит ни от момента запуска расчета,
+ * ни от порядка обработки ставок.
+ * <p>
  * Идемпотентность: строка ставки блокируется через SELECT ... FOR UPDATE, после чего
  * проверяется флаг {@code settled}. Начисление и установка флага коммитятся вместе,
  * поэтому повторный запуск расчета (в том числе после рестарта сервиса) не выплатит дважды.
@@ -48,45 +53,59 @@ public class PariPayoutProcessor {
             return false;
         }
 
-        Pari pari = bet.getPari();
-        long payout;
-        TransactionReason reason;
-        switch (pari.getStatus()) {
-            case CANCELED -> {
-                payout = bet.getAmount();
-                reason = TransactionReason.BET_REFUND;
-            }
-            case FINISHED -> {
-                boolean won = Objects.equals(pari.getWinningOption(), bet.getOption());
-                payout = won ? bet.getAmount() * PariService.WIN_MULTIPLIER : 0L;
-                reason = TransactionReason.BET_WIN;
-            }
-            default -> throw new IllegalStateException(
-                    "Расчет по пари " + pari.getId() + " в статусе " + pari.getStatus() + " невозможен");
-        }
-
+        Payout payout = resolvePayout(bet);
         Instant now = Instant.now();
 
-        if (payout > 0) {
+        if (payout.amount() > 0) {
             GuildMember member = guildMemberRepository.findByIdForUpdate(bet.getMember().getId())
                     .orElseThrow(() -> new IllegalStateException("Участник ставки " + betId + " не найден"));
-            member.setBalance(member.getBalance() + payout);
+            member.setBalance(member.getBalance() + payout.amount());
             guildMemberRepository.save(member);
 
             PointsTransaction tx = new PointsTransaction();
             tx.setMember(member);
-            tx.setAmount(Math.toIntExact(payout));
-            tx.setReason(reason);
-            tx.setInitiatedBy(pari.getAuthorId());
-            tx.setReferenceId(pari.getId());
+            tx.setAmount(payout.amount());
+            tx.setReason(payout.reason());
+            tx.setInitiatedBy(bet.getPari().getAuthorId());
+            tx.setReferenceId(bet.getPari().getId());
             tx.setCreatedAt(now);
             pointsTransactionRepository.save(tx);
         }
 
         bet.setSettled(true);
-        bet.setPayout(payout);
+        bet.setPayout(payout.amount());
         bet.setSettledAt(now);
         pariBetRepository.save(bet);
         return true;
+    }
+
+    private Payout resolvePayout(PariBet bet) {
+        Pari pari = bet.getPari();
+        return switch (pari.getStatus()) {
+            case CANCELED -> new Payout(bet.getAmount(), TransactionReason.BET_REFUND);
+            case FINISHED -> resolveFinishedPayout(bet, pari);
+            default -> throw new IllegalStateException(
+                    "Расчет по пари " + pari.getId() + " в статусе " + pari.getStatus() + " невозможен");
+        };
+    }
+
+    private Payout resolveFinishedPayout(PariBet bet, Pari pari) {
+        long winningSum = pari.getWinningSum() == null ? 0L : pari.getWinningSum();
+        if (winningSum <= 0) {
+            // На победивший вариант никто не поставил: делить призовой фонд не между кем,
+            // поэтому ставки возвращаются всем участникам.
+            return new Payout(bet.getAmount(), TransactionReason.BET_REFUND);
+        }
+
+        if (!Objects.equals(pari.getWinningOption(), bet.getOption())) {
+            return new Payout(0L, TransactionReason.BET_WIN);
+        }
+
+        long prizePool = pari.getPrizePool() == null ? 0L : pari.getPrizePool();
+        return new Payout(PariPayoutCalculator.payout(bet.getAmount(), prizePool, winningSum),
+                TransactionReason.BET_WIN);
+    }
+
+    private record Payout(long amount, TransactionReason reason) {
     }
 }

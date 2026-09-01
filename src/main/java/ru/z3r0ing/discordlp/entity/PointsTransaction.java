@@ -35,7 +35,7 @@ public class PointsTransaction {
     private GuildMember member;
 
     @Column(name = "amount", nullable = false)
-    private Integer amount;
+    private Long amount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "reason", nullable = false)

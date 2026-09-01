@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 import ru.z3r0ing.discordlp.entity.GuildMember;
 import ru.z3r0ing.discordlp.entity.Pari;
 import ru.z3r0ing.discordlp.entity.PariBet;
@@ -24,6 +25,7 @@ import ru.z3r0ing.discordlp.repository.PariBetRepository;
 import ru.z3r0ing.discordlp.repository.PariRepository;
 import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +45,7 @@ class PariServiceTest {
     private static final String GUILD_ID = "guild-1";
     private static final String AUTHOR_ID = "author-1";
     private static final String BETTER_ID = "better-1";
+    private static final BigDecimal FIVE_PERCENT = new BigDecimal("0.05");
 
     @Mock
     private PariRepository pariRepository;
@@ -293,6 +296,51 @@ class PariServiceTest {
     }
 
     @Test
+    void finishFreezesPoolsAndCoefficient() {
+        Pari pari = openPari();
+        pari.setCommissionRate(FIVE_PERCENT);
+        when(pariRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(pari));
+        givenPools(500L, 500L);
+
+        Pari finished = pariService.finish(1L, AUTHOR_ID, true);
+
+        assertThat(finished.getTotalPool()).isEqualTo(1_000L);
+        assertThat(finished.getPrizePool()).isEqualTo(950L);
+        assertThat(finished.getWinningSum()).isEqualTo(500L);
+        assertThat(finished.getWinningCoefficient()).isEqualByComparingTo("1.9");
+    }
+
+    @Test
+    void finishUsesTheLosingSideWhenNoWins() {
+        Pari pari = openPari();
+        pari.setCommissionRate(FIVE_PERCENT);
+        when(pariRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(pari));
+        givenPools(0L, 800L);
+
+        Pari finished = pariService.finish(1L, AUTHOR_ID, true);
+
+        assertThat(finished.getTotalPool()).isEqualTo(800L);
+        assertThat(finished.getWinningSum()).isZero();
+        assertThat(finished.getWinningCoefficient())
+                .as("делить призовой фонд не между кем")
+                .isNull();
+    }
+
+    @Test
+    void finishOfAnEmptyPariLeavesEmptyPools() {
+        Pari pari = openPari();
+        when(pariRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(pari));
+        givenPools(0L, 0L);
+
+        Pari finished = pariService.finish(1L, AUTHOR_ID, false);
+
+        assertThat(finished.getTotalPool()).isZero();
+        assertThat(finished.getPrizePool()).isZero();
+        assertThat(finished.getWinningSum()).isZero();
+        assertThat(finished.getWinningCoefficient()).isNull();
+    }
+
+    @Test
     void finishRejectsNonAuthor() {
         Pari pari = openPari();
         when(pariRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(pari));
@@ -359,6 +407,47 @@ class PariServiceTest {
     }
 
     @Test
+    void newPariCarriesConfiguredCommissionRate() {
+        ReflectionTestUtils.setField(pariService, "commissionRate", FIVE_PERCENT);
+
+        assertThat(pariService.createPari(guild, author, "Пари").getCommissionRate())
+                .isEqualByComparingTo(FIVE_PERCENT);
+    }
+
+    @Test
+    void invalidCommissionRateFallsBackToZero() {
+        for (BigDecimal invalid : new BigDecimal[]{new BigDecimal("-0.1"), BigDecimal.ONE, new BigDecimal("1.5")}) {
+            ReflectionTestUtils.setField(pariService, "commissionRate", invalid);
+
+            assertThat(pariService.createPari(guild, author, "Пари").getCommissionRate())
+                    .as("комиссия %s", invalid)
+                    .isEqualByComparingTo(BigDecimal.ZERO);
+        }
+    }
+
+    @Test
+    void missingCommissionRateFallsBackToZero() {
+        ReflectionTestUtils.setField(pariService, "commissionRate", null);
+
+        assertThat(pariService.createPari(guild, author, "Пари").getCommissionRate())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void oddsReflectCurrentPoolsAndCommission() {
+        Pari pari = openPari();
+        pari.setCommissionRate(FIVE_PERCENT);
+        givenPools(400L, 600L);
+
+        PariOdds odds = pariService.getOdds(pari);
+
+        assertThat(odds.totalPool()).isEqualTo(1_000L);
+        assertThat(odds.prizePool()).isEqualTo(950L);
+        assertThat(odds.yesCoefficient()).isEqualByComparingTo("2.375");
+        assertThat(odds.noCoefficient()).isEqualByComparingTo("1.5833");
+    }
+
+    @Test
     void findBetResolvesMemberByGuildAndUser() {
         GuildMember member = member(0L);
         PariBet bet = new PariBet();
@@ -394,6 +483,11 @@ class PariServiceTest {
         when(user.getId()).thenReturn(id);
         when(user.getName()).thenReturn(id);
         return user;
+    }
+
+    private void givenPools(long yesPool, long noPool) {
+        when(pariBetRepository.sumAmountByPariIdAndOption(1L, Boolean.TRUE)).thenReturn(yesPool);
+        when(pariBetRepository.sumAmountByPariIdAndOption(1L, Boolean.FALSE)).thenReturn(noPool);
     }
 
     private static Pari openPari() {

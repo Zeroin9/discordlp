@@ -28,6 +28,7 @@ import ru.z3r0ing.discordlp.service.PariPayoutProcessor;
 import ru.z3r0ing.discordlp.service.PariService;
 import ru.z3r0ing.discordlp.service.PariStats;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -47,7 +48,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * собственную транзакцию — иначе пессимистичные блокировки и расчет в отдельных
  * транзакциях проверить нельзя.
  */
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
+@DataJpaTest(properties = {
+        "spring.jpa.hibernate.ddl-auto=validate",
+        "pari.commission-rate=0.05"
+})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({FlywayConfig.class, PariService.class, GuildMemberService.class, PariPayoutProcessor.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -66,38 +70,92 @@ class PariFlowIntegrationTest extends PostgresContainerTest {
     @Autowired
     private PointsTransactionRepository pointsTransactionRepository;
 
+    private static final BigDecimal COMMISSION_RATE = new BigDecimal("0.05");
+
     private final String guildId = "guild-" + UUID.randomUUID();
 
     @Test
-    void winnersArePaidTwiceTheirBetAndLosersGetNothing() {
+    void winnersSharePrizePoolAndLosersGetNothing() {
         Guild guild = guild();
         User author = user("author");
-        User winner = user("winner");
+        User winnerBig = user("winner-big");
+        User winnerSmall = user("winner-small");
         User loser = user("loser");
-        giveBalance(guild, winner, 1_000L);
+        giveBalance(guild, winnerBig, 1_000L);
+        giveBalance(guild, winnerSmall, 1_000L);
         giveBalance(guild, loser, 1_000L);
 
         Pari pari = pariService.createPari(guild, author, "Победит ли команда?");
+        assertThat(pari.getCommissionRate()).isEqualByComparingTo(COMMISSION_RATE);
 
-        pariService.placeBet(pari.getId(), guild, winner, true, 300L);
-        pariService.placeBet(pari.getId(), guild, loser, false, 200L);
+        pariService.placeBet(pari.getId(), guild, winnerBig, true, 300L);
+        pariService.placeBet(pari.getId(), guild, winnerSmall, true, 200L);
+        pariService.placeBet(pari.getId(), guild, loser, false, 500L);
 
         // ставка списывается сразу
-        assertThat(balanceOf(winner)).isEqualTo(700L);
-        assertThat(balanceOf(loser)).isEqualTo(800L);
+        assertThat(balanceOf(winnerBig)).isEqualTo(700L);
+        assertThat(balanceOf(loser)).isEqualTo(500L);
 
         PariStats stats = pariService.getStats(pari.getId());
-        assertThat(stats.yesCount()).isEqualTo(1);
-        assertThat(stats.yesPool()).isEqualTo(300L);
-        assertThat(stats.totalPool()).isEqualTo(500L);
+        assertThat(stats.yesPool()).isEqualTo(500L);
+        assertThat(stats.totalPool()).isEqualTo(1_000L);
 
         pariService.finish(pari.getId(), author.getId(), true);
         settleAll(pari.getId());
 
-        assertThat(balanceOf(winner)).isEqualTo(1_300L);
-        assertThat(balanceOf(loser)).isEqualTo(800L);
-        assertThat(pariRepository.findById(pari.getId()).orElseThrow().getStatus())
-                .isEqualTo(PariStatus.FINISHED);
+        Pari settled = pariRepository.findById(pari.getId()).orElseThrow();
+        assertThat(settled.getStatus()).isEqualTo(PariStatus.FINISHED);
+        assertThat(settled.getTotalPool()).isEqualTo(1_000L);
+        assertThat(settled.getPrizePool()).isEqualTo(950L);       // 1000 - 5% комиссии
+        assertThat(settled.getWinningSum()).isEqualTo(500L);
+        assertThat(settled.getWinningCoefficient()).isEqualByComparingTo("1.9");
+
+        // призовой фонд делится пропорционально ставкам: 300/500 и 200/500 от 950
+        assertThat(balanceOf(winnerBig)).isEqualTo(700L + 570L);
+        assertThat(balanceOf(winnerSmall)).isEqualTo(800L + 380L);
+        assertThat(balanceOf(loser)).isEqualTo(500L);
+    }
+
+    @Test
+    void soleWinnerTakesTheWholePrizePool() {
+        Guild guild = guild();
+        User author = user("author");
+        User winner = user("winner");
+        User loser = user("loser");
+        giveBalance(guild, winner, 200L);
+        giveBalance(guild, loser, 800L);
+
+        Pari pari = pariService.createPari(guild, author, "Один против всех");
+        pariService.placeBet(pari.getId(), guild, winner, true, 200L);
+        pariService.placeBet(pari.getId(), guild, loser, false, 800L);
+
+        pariService.finish(pari.getId(), author.getId(), true);
+        settleAll(pari.getId());
+
+        assertThat(balanceOf(winner)).isEqualTo(950L);
+        assertThat(balanceOf(loser)).isZero();
+    }
+
+    @Test
+    void everyoneIsRefundedWhenNobodyPickedTheWinningOption() {
+        Guild guild = guild();
+        User author = user("author");
+        User first = user("first");
+        User second = user("second");
+        giveBalance(guild, first, 300L);
+        giveBalance(guild, second, 700L);
+
+        Pari pari = pariService.createPari(guild, author, "Все ошиблись");
+        pariService.placeBet(pari.getId(), guild, first, false, 300L);
+        pariService.placeBet(pari.getId(), guild, second, false, 700L);
+
+        pariService.finish(pari.getId(), author.getId(), true);
+        settleAll(pari.getId());
+
+        assertThat(pariRepository.findById(pari.getId()).orElseThrow().getWinningSum()).isZero();
+        assertThat(balanceOf(first)).isEqualTo(300L);
+        assertThat(balanceOf(second)).isEqualTo(700L);
+        assertThat(transactionsOf(first, TransactionReason.BET_REFUND)).hasSize(1);
     }
 
     @Test
@@ -105,17 +163,22 @@ class PariFlowIntegrationTest extends PostgresContainerTest {
         Guild guild = guild();
         User author = user("author");
         User winner = user("winner");
+        User loser = user("loser");
         giveBalance(guild, winner, 500L);
+        giveBalance(guild, loser, 500L);
 
         Pari pari = pariService.createPari(guild, author, "Идемпотентность");
         pariService.placeBet(pari.getId(), guild, winner, true, 500L);
+        pariService.placeBet(pari.getId(), guild, loser, false, 500L);
         pariService.finish(pari.getId(), author.getId(), true);
 
         settleAll(pari.getId());
+        long afterFirstSettlement = balanceOf(winner);
         settleAll(pari.getId());
         settleAll(pari.getId());
 
-        assertThat(balanceOf(winner)).isEqualTo(1_000L);
+        assertThat(afterFirstSettlement).isEqualTo(950L);
+        assertThat(balanceOf(winner)).isEqualTo(950L);
         assertThat(transactionsOf(winner, TransactionReason.BET_WIN)).hasSize(1);
     }
 
@@ -133,6 +196,7 @@ class PariFlowIntegrationTest extends PostgresContainerTest {
         pariService.cancel(pari.getId(), author.getId());
         settleAll(pari.getId());
 
+        // при отмене комиссия не удерживается — возвращается вся ставка
         assertThat(balanceOf(better)).isEqualTo(500L);
         assertThat(transactionsOf(better, TransactionReason.BET_REFUND)).hasSize(1);
     }

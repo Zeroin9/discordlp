@@ -19,6 +19,7 @@ import org.mockito.quality.Strictness;
 import ru.z3r0ing.discordlp.entity.Pari;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -45,7 +46,7 @@ class PariMessageServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(pariService.getStats(any())).thenReturn(new PariStats(2L, 500L, 1L, 200L));
+        when(pariService.getStats(any())).thenReturn(new PariStats(2L, 500L, 1L, 500L));
     }
 
     // --- идентификаторы компонентов ---
@@ -70,16 +71,48 @@ class PariMessageServiceTest {
     // --- эмбед ---
 
     @Test
-    void embedShowsTitleAuthorAndPools() {
+    void embedShowsTitleAuthorPoolsAndCoefficients() {
         MessageEmbed embed = pariMessageService.buildEmbed(pari(PariStatus.OPEN, null));
 
         assertThat(embed.getTitle()).contains("Победит ли команда?");
         assertThat(embed.getDescription()).contains("<@author-1>");
         assertThat(embed.getFields()).hasSize(3);
-        assertThat(embed.getFields().get(0).getValue()).contains("2 ставок").contains("500 LP");
-        assertThat(embed.getFields().get(1).getValue()).contains("1 ставок").contains("200 LP");
-        assertThat(embed.getFields().get(2).getValue()).contains("3 участников").contains("700 LP");
+        // пул 1000, комиссия 5% → призовой фонд 950, на каждый вариант по 500 → коэффициент 1.90
+        assertThat(embed.getFields().get(0).getValue())
+                .contains("2 ставок").contains("500 LP").contains("Коэф.: 1.90");
+        assertThat(embed.getFields().get(1).getValue())
+                .contains("1 ставок").contains("Коэф.: 1.90");
+        assertThat(embed.getFields().get(2).getValue())
+                .contains("3 участников").contains("1000 LP").contains("Комиссия 5%").contains("50 LP");
         assertThat(embed.getFooter().getText()).contains("Идет прием ставок");
+    }
+
+    @Test
+    void optionWithoutBetsShowsDashInsteadOfCoefficient() {
+        when(pariService.getStats(any())).thenReturn(new PariStats(1L, 300L, 0L, 0L));
+
+        MessageEmbed embed = pariMessageService.buildEmbed(pari(PariStatus.OPEN, null));
+
+        assertThat(embed.getFields().get(1).getValue()).contains("Коэф.: —");
+    }
+
+    @Test
+    void commissionLineIsHiddenWhenThereIsNoCommission() {
+        Pari pari = pari(PariStatus.OPEN, null);
+        pari.setCommissionRate(BigDecimal.ZERO);
+
+        MessageEmbed embed = pariMessageService.buildEmbed(pari);
+
+        assertThat(embed.getFields().get(2).getValue()).doesNotContain("Комиссия");
+        assertThat(embed.getFields().get(0).getValue()).contains("Коэф.: 2.00");
+    }
+
+    @Test
+    void formatCoefficientTruncatesToTwoDecimals() {
+        // усечение, а не округление: обещанный коэффициент не должен оказаться выше реального
+        assertThat(PariMessageService.formatCoefficient(new BigDecimal("3.1666"))).isEqualTo("3.16");
+        assertThat(PariMessageService.formatCoefficient(new BigDecimal("1.9000"))).isEqualTo("1.90");
+        assertThat(PariMessageService.formatCoefficient(null)).isEqualTo("—");
     }
 
     @Test
@@ -92,6 +125,25 @@ class PariMessageServiceTest {
                 .contains("победил вариант «Нет»");
         assertThat(pariMessageService.buildEmbed(pari(PariStatus.CANCELED, null)).getFooter().getText())
                 .contains("ставки возвращены");
+    }
+
+    @Test
+    void finishedFooterShowsTheFinalCoefficient() {
+        Pari pari = pari(PariStatus.FINISHED, Boolean.TRUE);
+        pari.setWinningSum(500L);
+        pari.setWinningCoefficient(new BigDecimal("1.9000"));
+
+        assertThat(pariMessageService.buildEmbed(pari).getFooter().getText())
+                .contains("победил вариант «Да»").contains("коэффициент 1.90");
+    }
+
+    @Test
+    void finishedFooterExplainsRefundWhenNobodyWon() {
+        Pari pari = pari(PariStatus.FINISHED, Boolean.TRUE);
+        pari.setWinningSum(0L);
+
+        assertThat(pariMessageService.buildEmbed(pari).getFooter().getText())
+                .contains("ставок на него не было").contains("возвращены");
     }
 
     @Test
@@ -229,6 +281,7 @@ class PariMessageServiceTest {
         pari.setTitle("Победит ли команда?");
         pari.setStatus(status);
         pari.setWinningOption(winningOption);
+        pari.setCommissionRate(new BigDecimal("0.05"));
         pari.setCreatedAt(Instant.now());
         return pari;
     }
