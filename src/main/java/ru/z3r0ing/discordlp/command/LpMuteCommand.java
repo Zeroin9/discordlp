@@ -81,7 +81,7 @@ public class LpMuteCommand implements SlashCommandHandler {
 
         PointsTransaction tx = new PointsTransaction();
         tx.setMember(callerMember);
-        tx.setAmount(-MUTE_COST);
+        tx.setAmount((long) -MUTE_COST);
         tx.setReason(TransactionReason.USER_MUTE);
         tx.setInitiatedBy(caller.getId());
         tx.setCreatedAt(Instant.now());

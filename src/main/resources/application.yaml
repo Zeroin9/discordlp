@@ -19,6 +19,12 @@ discord:
   bot:
     token: ${DISCORD_BOT_TOKEN}
 
+pari:
+  # Через сколько часов открытое пари автоматически отменяется с возвратом ставок (0 — без тайм-аута)
+  timeout-hours: ${PARI_TIMEOUT_HOURS:24}
+  # Доля комиссии организатора, удерживаемая из общего пула (0.05 — 5%, 0 — без комиссии)
+  commission-rate: ${PARI_COMMISSION_RATE:0.05}
+
 logging:
   level:
     root: INFO

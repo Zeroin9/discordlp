@@ -50,7 +50,7 @@ public class LpAddCommand implements SlashCommandHandler {
 
         PointsTransaction tx = new PointsTransaction();
         tx.setMember(targetMember);
-        tx.setAmount(amount);
+        tx.setAmount((long) amount);
         tx.setReason(TransactionReason.ADMIN_MANUAL);
         tx.setInitiatedBy(event.getUser().getId());
         tx.setCreatedAt(Instant.now());

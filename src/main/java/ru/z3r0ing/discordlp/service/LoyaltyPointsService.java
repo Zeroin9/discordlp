@@ -208,7 +208,7 @@ public class LoyaltyPointsService {
             if (pointsInfo.reason != null) {
                 PointsTransaction tx = new PointsTransaction();
                 tx.setMember(guildMember);
-                tx.setAmount(pointsInfo.pointsToAdd);
+                tx.setAmount((long) pointsInfo.pointsToAdd);
                 tx.setReason(pointsInfo.reason);
                 tx.setCreatedAt(now);
                 pointsTransactionRepository.save(tx);

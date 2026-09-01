@@ -1,26 +1,30 @@
 services:
   db:
+    # Major version is pinned on purpose: bumping it requires a dump/restore of
+    # the postgres_data volume, PostgreSQL will not start on a foreign data dir
     image: postgres:16-alpine
     container_name: discord-points-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: discordlp
-      POSTGRES_USER: postgres
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d discordlp"]
+      test: ["CMD-SHELL", "pg_isready -U ${SPRING_DATASOURCE_USERNAME:-postgres} -d discordlp"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    image: discordlp:latest
     container_name: discord-points-app
     restart: unless-stopped
     depends_on:
@@ -28,9 +32,11 @@ services:
         condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/discordlp
-      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is not set, copy .env.example to .env}
+      PARI_TIMEOUT_HOURS: ${PARI_TIMEOUT_HOURS:-24}
+      PARI_COMMISSION_RATE: ${PARI_COMMISSION_RATE:-0.05}
     ports:
       - "8080:8080"
 
