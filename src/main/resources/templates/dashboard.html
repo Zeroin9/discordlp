@@ -31,18 +31,20 @@
             <th scope="col">Имя пользователя</th>
             <th scope="col">Название гильдии</th>
             <th scope="col">Баланс LP</th>
+            <th scope="col">Время в конфе</th>
         </tr>
         </thead>
         <tbody>
-        <tr th:each="member, iterStat : ${guildMembers}">
+        <tr th:each="row, iterStat : ${guildMembers}">
             <th scope="row" th:text="${iterStat.index + 1 + currentPage * pageSize}"></th>
-            <td th:text="${member.userName}">Имя пользователя</td>
-            <td th:text="${member.guildName}">Название гильдии</td>
-            <td th:text="${member.balance}">Баланс</td>
+            <td th:text="${row.member.userName}">Имя пользователя</td>
+            <td th:text="${row.member.guildName}">Название гильдии</td>
+            <td th:text="${row.member.balance}">Баланс</td>
+            <td th:text="${row.voiceTimeText}" th:title="'Рассчитано по баллам за голосовые каналы'">0 мин</td>
         </tr>
         <!-- Сообщение, если нет данных -->
         <tr th:if="${guildMembers.isEmpty()}">
-            <td colspan="4" class="text-center">Нет данных для отображения</td>
+            <td colspan="5" class="text-center">Нет данных для отображения</td>
         </tr>
         </tbody>
     </table>

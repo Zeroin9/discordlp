@@ -41,7 +41,8 @@ Testcontainers (образ `postgres:16-alpine`). Контейнер запус�
 | `PariMessageServiceTest` | Формат `customId`, содержимое эмбеда, состав и доступность кнопок по статусам, перерисовку сообщения |
 | `LoyaltyPointsServiceTest` | Начисления 100/150/200 LP, пропуск заглушенных и AFK, интервал начисления, снятие мьютов |
 | `GuildMemberServiceTest` | Создание участника и переиспользование существующего |
-| `DashboardServiceTest` | Разбор параметра сортировки и откат к значению по умолчанию |
+| `DashboardServiceTest` | Разбор параметра сортировки, откат к значению по умолчанию, расчет времени в конфе по баллам |
+| `VoiceTimeTest` | Пересчет голосовых баллов во время, отсев неголосовых причин, формат вывода |
 | `BalanceCommandsTest` | `/lp`, `/lpuser`, `/lpadd`, `/lpremove` |
 | `ModerationCommandsTest` | `/lpkick`, `/lpmute`, включая отказы Discord API |
 | `LpPariCommandTest` | Публикацию опроса и сохранение координат сообщения |
@@ -60,6 +61,7 @@ success/failure-колбэков и их вызов вручную.
 |---|---|
 | `DiscordlpApplicationTests` | Полный контекст приложения: миграции применяются, Hibernate валидирует схему, все бины связываются. Соединение с Discord подменено моком |
 | `PariFlowIntegrationTest` | Полный цикл пари на настоящей БД |
+| `DashboardVoiceTimeIntegrationTest` | Агрегат времени в конфе на настоящей БД: суммы по причинам и отсев неголосовых начислений |
 
 `PariFlowIntegrationTest` покрывает то, что нельзя проверить моками:
 

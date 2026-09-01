@@ -27,7 +27,7 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class LoyaltyPointsService {
 
-    private static final long CHECK_INTERVAL_SECONDS = 300L;
+    private static final long CHECK_INTERVAL_SECONDS = VoiceTime.AWARD_INTERVAL_SECONDS;
     private static final long CHECK_INTERVAL_MS = CHECK_INTERVAL_SECONDS * 1_000L;
 
     private final JDA jda;
@@ -138,7 +138,7 @@ public class LoyaltyPointsService {
         if (isStreaming) {
             // Стример получает баллы только если в канале есть другие участники (зрители)
             if (members.size() > 1) {
-                pointsToAdd = 200;
+                pointsToAdd = VoiceTime.POINTS_STREAMER;
                 reason = TransactionReason.VOICE_STREAMER;
             }
         } else {
@@ -150,10 +150,10 @@ public class LoyaltyPointsService {
                     });
             
             if (hasStreamer) {
-                pointsToAdd = 150;
+                pointsToAdd = VoiceTime.POINTS_VIEWER;
                 reason = TransactionReason.VOICE_VIEWER;
             } else {
-                pointsToAdd = 100;
+                pointsToAdd = VoiceTime.POINTS_STANDARD;
                 reason = TransactionReason.VOICE_STANDARD;
             }
         }
