@@ -9,7 +9,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.z3r0ing.discordlp.entity.GuildMember;
+import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
+
+import java.time.Duration;
 
 import java.util.List;
 
@@ -43,7 +46,9 @@ class DashboardControllerTest {
                 .andExpect(model().attribute("pageSize", 50))
                 .andExpect(model().attribute("sort", "balance,desc"))
                 .andExpect(model().attributeExists("guildMembers", "totalPages"))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Tester")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Tester")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Время в конфе")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")));
 
         verify(dashboardService).getGuildMembersPage(0, 50, "balance,desc");
     }
@@ -71,7 +76,7 @@ class DashboardControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Нет данных для отображения")));
     }
 
-    private static Page<GuildMember> membersPage() {
+    private static Page<DashboardMemberView> membersPage() {
         GuildMember member = new GuildMember();
         member.setId(1L);
         member.setGuildId("guild-1");
@@ -79,6 +84,7 @@ class DashboardControllerTest {
         member.setUserName("Tester");
         member.setGuildName("Guild");
         member.setBalance(1_000L);
-        return new PageImpl<>(List.of(member), PageRequest.of(0, 50), 1);
+        DashboardMemberView row = DashboardMemberView.of(member, Duration.ofMinutes(95));
+        return new PageImpl<>(List.of(row), PageRequest.of(0, 50), 1);
     }
 }

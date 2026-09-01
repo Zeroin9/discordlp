@@ -8,16 +8,24 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import ru.z3r0ing.discordlp.entity.GuildMember;
+import ru.z3r0ing.discordlp.entity.TransactionReason;
 import ru.z3r0ing.discordlp.repository.GuildMemberRepository;
+import ru.z3r0ing.discordlp.repository.PointsTransactionRepository;
+import ru.z3r0ing.discordlp.repository.VoicePointsSum;
 
+import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -25,6 +33,9 @@ class DashboardServiceTest {
 
     @Mock
     private GuildMemberRepository guildMemberRepository;
+
+    @Mock
+    private PointsTransactionRepository pointsTransactionRepository;
 
     @InjectMocks
     private DashboardService dashboardService;
@@ -75,17 +86,97 @@ class DashboardServiceTest {
     }
 
     @Test
-    void returnsRepositoryPage() {
-        Page<GuildMember> page = new PageImpl<>(List.of(new GuildMember()));
-        when(guildMemberRepository.findAll(any(Pageable.class))).thenReturn(page);
+    void keepsPagingMetadataOfRepositoryPage() {
+        when(guildMemberRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(member(1L)), PageRequest.of(1, 1), 5));
+        when(pointsTransactionRepository.sumPointsByMemberAndReason(anyCollection(), anyCollection()))
+                .thenReturn(List.of());
 
-        assertThat(dashboardService.getGuildMembersPage(0, 50, null)).isSameAs(page);
+        Page<DashboardMemberView> page = dashboardService.getGuildMembersPage(1, 1, null);
+
+        assertThat(page.getTotalElements()).isEqualTo(5);
+        assertThat(page.getTotalPages()).isEqualTo(5);
+        assertThat(page.getNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void doesNotQueryTransactionsForAnEmptyPage() {
+        when(guildMemberRepository.findAll(any(Pageable.class))).thenReturn(emptyPage());
+
+        assertThat(dashboardService.getGuildMembersPage(0, 50, null)).isEmpty();
+
+        verifyNoInteractions(pointsTransactionRepository);
+    }
+
+    @Test
+    void sumsVoiceTimeAcrossAllVoiceReasons() {
+        when(guildMemberRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(member(1L))));
+        when(pointsTransactionRepository.sumPointsByMemberAndReason(anyCollection(), anyCollection()))
+                .thenReturn(List.of(
+                        // 6 интервалов по 100 LP = 30 минут
+                        new VoicePointsSum(1L, TransactionReason.VOICE_STANDARD, 600L),
+                        // 2 интервала по 150 LP = 10 минут
+                        new VoicePointsSum(1L, TransactionReason.VOICE_VIEWER, 300L),
+                        // 12 интервалов по 200 LP = 60 минут
+                        new VoicePointsSum(1L, TransactionReason.VOICE_STREAMER, 2400L)
+                ));
+
+        DashboardMemberView row = dashboardService.getGuildMembersPage(0, 50, null).getContent().getFirst();
+
+        assertThat(row.voiceTime()).isEqualTo(Duration.ofMinutes(100));
+        assertThat(row.voiceTimeText()).isEqualTo("1 ч 40 мин");
+    }
+
+    @Test
+    void reportsZeroVoiceTimeWhenMemberHasNoVoiceTransactions() {
+        when(guildMemberRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(member(1L), member(2L))));
+        when(pointsTransactionRepository.sumPointsByMemberAndReason(anyCollection(), anyCollection()))
+                .thenReturn(List.of(new VoicePointsSum(1L, TransactionReason.VOICE_STANDARD, 100L)));
+
+        List<DashboardMemberView> rows = dashboardService.getGuildMembersPage(0, 50, null).getContent();
+
+        assertThat(rows.get(0).voiceTime()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(rows.get(1).voiceTime()).isEqualTo(Duration.ZERO);
+        assertThat(rows.get(1).voiceTimeText()).isEqualTo("0 мин");
+    }
+
+    @Test
+    void asksOnlyForVoiceReasonsOfThePageMembers() {
+        when(guildMemberRepository.findAll(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(member(7L), member(8L))));
+        when(pointsTransactionRepository.sumPointsByMemberAndReason(anyCollection(), anyCollection()))
+                .thenReturn(List.of());
+
+        dashboardService.getGuildMembersPage(0, 50, null);
+
+        ArgumentCaptor<Collection<Long>> ids = ArgumentCaptor.captor();
+        ArgumentCaptor<Collection<TransactionReason>> reasons = ArgumentCaptor.captor();
+        verify(pointsTransactionRepository).sumPointsByMemberAndReason(ids.capture(), reasons.capture());
+
+        assertThat(ids.getValue()).containsExactlyInAnyOrder(7L, 8L);
+        assertThat(reasons.getValue()).containsExactlyInAnyOrder(
+                TransactionReason.VOICE_STANDARD,
+                TransactionReason.VOICE_VIEWER,
+                TransactionReason.VOICE_STREAMER);
     }
 
     private Pageable capturePageable() {
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(guildMemberRepository).findAll(captor.capture());
         return captor.getValue();
+    }
+
+    private static GuildMember member(Long id) {
+        GuildMember member = new GuildMember();
+        member.setId(id);
+        member.setGuildId("guild-1");
+        member.setUserId("user-" + id);
+        member.setUserName("User " + id);
+        member.setGuildName("Guild");
+        member.setBalance(1_000L);
+        return member;
     }
 
     private static Page<GuildMember> emptyPage() {
