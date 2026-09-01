@@ -13,19 +13,23 @@ import net.dv8tion.jda.api.components.textinput.TextInputStyle;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.modals.Modal;
+import net.dv8tion.jda.api.requests.restaction.MessageCreateAction;
 import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageCreateData;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageEditData;
 import org.springframework.stereotype.Service;
 import ru.z3r0ing.discordlp.entity.Pari;
+import ru.z3r0ing.discordlp.entity.PariBet;
 import ru.z3r0ing.discordlp.entity.PariStatus;
 
 import java.awt.Color;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Отрисовка сообщения-опроса пари и разбор идентификаторов его компонентов.
@@ -47,6 +51,12 @@ public class PariMessageService {
 
     public static final String OPTION_YES = "yes";
     public static final String OPTION_NO = "no";
+
+    /** Лимит Discord на длину значения поля эмбеда. */
+    private static final int MAX_FIELD_LENGTH = 1024;
+
+    /** Запас в поле под строку «…и ещё N участников», если список не поместился целиком. */
+    private static final int OVERFLOW_RESERVE = 48;
 
     private static final Color COLOR_OPEN = new Color(0x5865F2);
     private static final Color COLOR_RESOLVING = new Color(0xFAA61A);
@@ -182,6 +192,185 @@ public class PariMessageService {
         } catch (Exception e) {
             log.error("Ошибка при обновлении сообщения пари {}", pariId, e);
         }
+    }
+
+    /**
+     * Публикует в канале сводку выплат: кто сколько поставил и сколько получил.
+     * Сообщение уходит ответом на сообщение-опрос пари, участники отмечаются через @.
+     * <p>
+     * Отправляется ровно один раз: право на публикацию берется атомарной отметкой
+     * {@code results_posted_at}, поэтому повторный расчет (кнопка, а следом
+     * восстановительный планировщик) не продублирует сводку. Ошибки только логируются —
+     * от доступности канала расчет средств не зависит.
+     */
+    public void publishResults(Long pariId) {
+        try {
+            Pari pari = pariService.findById(pariId).orElse(null);
+            if (pari == null || pari.getSettledAt() == null || pari.getResultsPostedAt() != null
+                    || pari.getChannelId() == null) {
+                return;
+            }
+
+            List<PariBet> bets = pariService.getBets(pariId);
+            if (bets.isEmpty()) {
+                // Ставок не было — сводить нечего, лишнее сообщение в канале ни к чему.
+                return;
+            }
+
+            MessageChannel channel = jda.getChannelById(MessageChannel.class, pari.getChannelId());
+            if (channel == null) {
+                log.warn("Канал {} для пари {} недоступен, итоги не опубликованы", pari.getChannelId(), pariId);
+                return;
+            }
+
+            // Отметку ставим, только когда сводке действительно есть куда уйти.
+            if (!pariService.claimResultsPublication(pariId)) {
+                log.debug("Итоги пари {} уже опубликованы", pariId);
+                return;
+            }
+
+            MessageCreateAction action = channel.sendMessageEmbeds(buildResultsEmbed(pari, bets));
+            if (pari.getMessageId() != null) {
+                // Ответ на сообщение пари; если его удалили — сводка уйдет обычным сообщением.
+                action = action.setMessageReference(pari.getMessageId())
+                        .failOnInvalidReply(false)
+                        .mentionRepliedUser(false);
+            }
+            action.queue(
+                    success -> log.debug("Итоги пари {} опубликованы", pariId),
+                    failure -> log.warn("Не удалось опубликовать итоги пари {}: {}", pariId, failure.getMessage())
+            );
+        } catch (Exception e) {
+            log.error("Ошибка при публикации итогов пари {}", pariId, e);
+        }
+    }
+
+    /**
+     * Сводка движения средств по завершенному пари: победители, проигравшие или возвраты.
+     * Каждая строка — упоминание участника и суммы в виде «ставка → выплата (изменение)».
+     */
+    public MessageEmbed buildResultsEmbed(Pari pari, List<PariBet> bets) {
+        boolean refundOnly = isRefundOnly(pari);
+
+        EmbedBuilder embed = new EmbedBuilder()
+                .setTitle(truncate("🧾 Итоги пари: " + pari.getTitle(), MessageEmbed.TITLE_MAX_LENGTH))
+                .setColor(statusColor(pari.getStatus()))
+                .setDescription(resultsDescription(pari, bets, refundOnly));
+
+        if (refundOnly) {
+            embed.addField("↩️ Возврат ставок (" + bets.size() + ")",
+                    betLines(sortedBy(bets, PariBet::getAmount), PariMessageService::refundLine), false);
+        } else {
+            boolean winningOption = Boolean.TRUE.equals(pari.getWinningOption());
+            List<PariBet> winners = bets.stream()
+                    .filter(bet -> winningOption == Boolean.TRUE.equals(bet.getOption()))
+                    .toList();
+            List<PariBet> losers = bets.stream()
+                    .filter(bet -> winningOption != Boolean.TRUE.equals(bet.getOption()))
+                    .toList();
+
+            if (!winners.isEmpty()) {
+                embed.addField("🏆 Победители · «" + optionName(winningOption) + "» (" + winners.size() + ")",
+                        betLines(sortedBy(winners, PariMessageService::payoutOf), PariMessageService::winLine), false);
+            }
+            if (!losers.isEmpty()) {
+                embed.addField("💀 Проигравшие · «" + optionName(!winningOption) + "» (" + losers.size() + ")",
+                        betLines(sortedBy(losers, PariBet::getAmount), PariMessageService::loseLine), false);
+            }
+        }
+
+        embed.setFooter(bets.size() + " участников · всего поставлено " + totalBet(bets) + " LP");
+        if (pari.getSettledAt() != null) {
+            embed.setTimestamp(pari.getSettledAt());
+        }
+        return embed.build();
+    }
+
+    /** Возврат всем: пари отменено либо на победивший вариант никто не поставил. */
+    private static boolean isRefundOnly(Pari pari) {
+        return pari.getStatus() != PariStatus.FINISHED
+                || pari.getWinningSum() == null || pari.getWinningSum() == 0;
+    }
+
+    private String resultsDescription(Pari pari, List<PariBet> bets, boolean refundOnly) {
+        if (pari.getStatus() == PariStatus.CANCELED) {
+            return "Пари отменено · участникам возвращено **" + totalBet(bets) + "** LP.";
+        }
+
+        String winner = "Победил вариант «" + optionName(Boolean.TRUE.equals(pari.getWinningOption())) + "»";
+        if (refundOnly) {
+            return winner + ", но ставок на него не было · возвращено **" + totalBet(bets) + "** LP.";
+        }
+
+        long totalPool = pari.getTotalPool() == null ? totalBet(bets) : pari.getTotalPool();
+        long prizePool = pari.getPrizePool() == null ? totalPool : pari.getPrizePool();
+        StringBuilder text = new StringBuilder(winner)
+                .append(" · коэффициент **").append(formatCoefficient(pari.getWinningCoefficient())).append("**\n")
+                .append("Призовой фонд: **").append(prizePool).append("** LP из **").append(totalPool).append("** LP");
+        if (totalPool > prizePool) {
+            text.append(" · комиссия ").append(formatPercent(pari.getCommissionRate()))
+                    .append(": ").append(totalPool - prizePool).append(" LP");
+        }
+        return text.toString();
+    }
+
+    private static String winLine(PariBet bet) {
+        long payout = payoutOf(bet);
+        return mention(bet) + " — " + bet.getAmount() + " LP → **" + payout + "** LP ("
+                + formatDelta(payout - bet.getAmount()) + ")";
+    }
+
+    private static String loseLine(PariBet bet) {
+        return mention(bet) + " — " + bet.getAmount() + " LP → 0 LP (" + formatDelta(-bet.getAmount()) + ")";
+    }
+
+    private static String refundLine(PariBet bet) {
+        return mention(bet) + " — " + bet.getAmount() + " LP → **" + payoutOf(bet) + "** LP (возврат)";
+    }
+
+    private static String mention(PariBet bet) {
+        return "<@" + bet.getMember().getUserId() + ">";
+    }
+
+    private static long payoutOf(PariBet bet) {
+        return bet.getPayout() == null ? 0L : bet.getPayout();
+    }
+
+    private static long totalBet(List<PariBet> bets) {
+        return bets.stream().mapToLong(PariBet::getAmount).sum();
+    }
+
+    /** Изменение баланса участника со знаком: «+450» или «−500». */
+    private static String formatDelta(long delta) {
+        return (delta >= 0 ? "+" : "−") + Math.abs(delta);
+    }
+
+    private static List<PariBet> sortedBy(List<PariBet> bets, Function<PariBet, Long> key) {
+        return bets.stream().sorted(Comparator.comparingLong(key::apply).reversed()).toList();
+    }
+
+    /**
+     * Склеивает строки участников, не выходя за лимит поля эмбеда: что не поместилось —
+     * сворачивается в счетчик. Иначе Discord отклонил бы сводку целиком.
+     */
+    private static String betLines(List<PariBet> bets, Function<PariBet, String> renderer) {
+        List<String> lines = new ArrayList<>();
+        int used = 0;
+        for (PariBet bet : bets) {
+            String line = renderer.apply(bet);
+            int cost = line.length() + (lines.isEmpty() ? 0 : 1);
+            if (used + cost > MAX_FIELD_LENGTH - OVERFLOW_RESERVE) {
+                break;
+            }
+            lines.add(line);
+            used += cost;
+        }
+
+        int hidden = bets.size() - lines.size();
+        if (hidden > 0) {
+            lines.add("…и ещё " + hidden + " участников");
+        }
+        return String.join("\n", lines);
     }
 
     public static String optionName(boolean option) {

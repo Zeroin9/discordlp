@@ -22,6 +22,9 @@ import java.util.List;
  * Пари считается рассчитанным только после того, как не осталось ставок с {@code settled = false};
  * до этого момента {@code settled_at} остается пустым, и планировщик
  * {@link #recoverPendingSettlements()} доводит расчет до конца после сбоя или рестарта сервиса.
+ * <p>
+ * Как только расчет доведен до конца, в канал уходит сводка выплат
+ * ({@link PariMessageService#publishResults(Long)}) — ответом на сообщение пари.
  */
 @Slf4j
 @Service
@@ -81,6 +84,8 @@ public class PariSettlementService {
 
         markSettled(pariId);
         log.info("Расчет пари {} завершен, обработано ставок: {}", pariId, processed);
+        // Сводка выплат в канал: отправляется один раз, повторный вызов ее не продублирует.
+        pariMessageService.publishResults(pariId);
         return processed;
     }
 

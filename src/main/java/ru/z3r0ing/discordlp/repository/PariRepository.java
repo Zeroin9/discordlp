@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -35,4 +36,15 @@ public interface PariRepository extends JpaRepository<Pari, Long> {
     List<Pari> findByStatusAndCreatedAtBefore(PariStatus status, Instant threshold);
 
     List<Pari> findByGuildIdAndStatusOrderByCreatedAtDesc(String guildId, PariStatus status);
+
+    /**
+     * Отмечает, что сводка выплат по пари отправлена в канал.
+     * Условие {@code results_posted_at IS NULL} делает отметку гонкоустойчивой:
+     * право на публикацию получает ровно один вызов.
+     *
+     * @return 1, если отметку поставил именно этот вызов, иначе 0
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Pari p SET p.resultsPostedAt = :now WHERE p.id = :id AND p.resultsPostedAt IS NULL")
+    int markResultsPosted(@Param("id") Long id, @Param("now") Instant now);
 }

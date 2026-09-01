@@ -40,3 +40,7 @@ out/
 .env
 .env.local
 .env.*.local
+
+### Local notes (не попадают в репозиторий) ###
+task.md
+calc.md
