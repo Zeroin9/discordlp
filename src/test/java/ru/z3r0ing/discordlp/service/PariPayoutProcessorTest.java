@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -112,6 +113,38 @@ class PariPayoutProcessorTest {
         assertThat(member.getBalance()).isEqualTo(1_100L);
         verifyNoInteractions(pointsTransactionRepository);
         verify(pariBetRepository, never()).save(any());
+    }
+
+    @Test
+    void settlingAnOpenPariIsRefused() {
+        GuildMember member = member(1L, 500L);
+        Pari pari = pari(PariStatus.OPEN, null);
+        PariBet bet = bet(14L, pari, member, Boolean.TRUE, 300L, false);
+
+        when(pariBetRepository.findByIdForUpdate(14L)).thenReturn(Optional.of(bet));
+
+        assertThatThrownBy(() -> processor.settleBet(14L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("OPEN");
+
+        assertThat(bet.isSettled()).isFalse();
+        assertThat(member.getBalance()).isEqualTo(500L);
+    }
+
+    @Test
+    void missingMemberAbortsSettlement() {
+        GuildMember member = member(1L, 500L);
+        Pari pari = pari(PariStatus.FINISHED, Boolean.TRUE);
+        PariBet bet = bet(15L, pari, member, Boolean.TRUE, 300L, false);
+
+        when(pariBetRepository.findByIdForUpdate(15L)).thenReturn(Optional.of(bet));
+        when(guildMemberRepository.findByIdForUpdate(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> processor.settleBet(15L))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(bet.isSettled()).isFalse();
+        verifyNoInteractions(pointsTransactionRepository);
     }
 
     @Test
