@@ -6,7 +6,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import ru.z3r0ing.discordlp.entity.GuildMember;
+import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
 
 @Controller
@@ -31,7 +31,7 @@ public class DashboardController {
             @RequestParam(defaultValue = "balance,desc") String sort,
             Model model) {
 
-        Page<GuildMember> guildMemberPage = dashboardService.getGuildMembersPage(page, size, sort);
+        Page<DashboardMemberView> guildMemberPage = dashboardService.getGuildMembersPage(page, size, sort);
 
         model.addAttribute("guildMembers", guildMemberPage.getContent());
         model.addAttribute("currentPage", page);
