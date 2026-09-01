@@ -19,6 +19,10 @@ discord:
   bot:
     token: ${DISCORD_BOT_TOKEN}
 
+pari:
+  # Через сколько часов открытое пари автоматически отменяется с возвратом ставок (0 — без тайм-аута)
+  timeout-hours: ${PARI_TIMEOUT_HOURS:24}
+
 logging:
   level:
     root: INFO

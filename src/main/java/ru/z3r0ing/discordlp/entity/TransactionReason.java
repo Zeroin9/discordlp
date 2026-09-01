@@ -7,5 +7,11 @@ public enum TransactionReason {
     ADMIN_MANUAL,
     ADMIN_REMOVE,
     USER_KICK,
-    USER_MUTE
+    USER_MUTE,
+    /** Блокировка ставки в момент принятия участия в пари. */
+    BET_HOLD,
+    /** Выплата выигрыша по пари (ставка x2). */
+    BET_WIN,
+    /** Возврат ставки при отмене пари. */
+    BET_REFUND
 }

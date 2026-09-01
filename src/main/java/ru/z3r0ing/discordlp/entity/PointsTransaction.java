@@ -44,6 +44,10 @@ public class PointsTransaction {
     @Column(name = "initiated_by")
     private String initiatedBy;
 
+    /** Идентификатор объекта, породившего движение средств (например, id пари). */
+    @Column(name = "reference_id")
+    private Long referenceId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 }
