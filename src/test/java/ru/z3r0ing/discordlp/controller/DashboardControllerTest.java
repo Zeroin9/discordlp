@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import ru.z3r0ing.discordlp.entity.GuildMember;
 import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
+import ru.z3r0ing.discordlp.service.VoiceTimeBreakdown;
 
 import java.time.Duration;
 
@@ -45,12 +46,41 @@ class DashboardControllerTest {
                 .andExpect(model().attribute("currentPage", 0))
                 .andExpect(model().attribute("pageSize", 50))
                 .andExpect(model().attribute("sort", "balance,desc"))
-                .andExpect(model().attributeExists("guildMembers", "totalPages"))
+                .andExpect(model().attributeExists("guildMembers", "totalPages", "sortOrder", "columns"))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Tester")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Время в конфе")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Со стримом")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Без стрима")))
+                // 95 минут всего, из них 35 со стримом и 60 без
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("35 мин")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 0 мин")));
 
         verify(dashboardService).getGuildMembersPage(0, 50, "balance,desc");
+    }
+
+    @Test
+    void columnHeadersLinkToSortingInBothDirections() throws Exception {
+        when(dashboardService.getGuildMembersPage(anyInt(), anyInt(), anyString())).thenReturn(membersPage());
+
+        mockMvc.perform(get("/dashboard"))
+                .andExpect(status().isOk())
+                // Активная колонка переворачивает направление, остальные идут со своим предпочтительным
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=balance,asc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=streamTime,desc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=noStreamTime,desc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=userName,asc")));
+    }
+
+    @Test
+    void normalizesAnUnknownSortParameter() throws Exception {
+        when(dashboardService.getGuildMembersPage(anyInt(), anyInt(), anyString())).thenReturn(membersPage());
+
+        mockMvc.perform(get("/dashboard").param("sort", "lastVoiceCheckAt,asc"))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("sort", "balance,desc"));
+
+        verify(dashboardService).getGuildMembersPage(0, 50, "lastVoiceCheckAt,asc");
     }
 
     @Test
@@ -84,7 +114,8 @@ class DashboardControllerTest {
         member.setUserName("Tester");
         member.setGuildName("Guild");
         member.setBalance(1_000L);
-        DashboardMemberView row = DashboardMemberView.of(member, Duration.ofMinutes(95));
+        DashboardMemberView row = DashboardMemberView.of(member,
+                new VoiceTimeBreakdown(Duration.ofMinutes(35), Duration.ofMinutes(60)));
         return new PageImpl<>(List.of(row), PageRequest.of(0, 50), 1);
     }
 }

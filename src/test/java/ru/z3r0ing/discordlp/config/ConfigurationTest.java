@@ -41,7 +41,8 @@ class ConfigurationTest {
         verify(action).addCommands(captor.capture());
 
         assertThat(captor.getValue()).extracting(CommandData::getName)
-                .containsExactlyInAnyOrder("lp", "lpuser", "lpadd", "lpremove", "lpkick", "lpmute", "lp-pari");
+                .containsExactlyInAnyOrder("lp", "lpuser", "lpadd", "lpremove", "lpkick", "lpmute", "lp-pari",
+                        "lptable", "lpweek");
     }
 
     @Test

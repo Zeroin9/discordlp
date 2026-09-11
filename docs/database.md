@@ -53,10 +53,16 @@ Flyway настроен с `baselineOnMigrate = true`, поэтому подкл
 
 | Значение | Когда |
 |---|---|
-| `VOICE_STANDARD`, `VOICE_STREAMER`, `VOICE_VIEWER` | Начисление за голосовой канал |
+| `VOICE_STANDARD` | Начисление за голосовой канал без стрима |
+| `VOICE_STREAMER`, `VOICE_VIEWER` | Начисление за голосовой канал, где шел стрим |
 | `ADMIN_MANUAL`, `ADMIN_REMOVE` | `/lpadd`, `/lpremove` |
 | `USER_KICK`, `USER_MUTE` | `/lpkick`, `/lpmute` |
 | `BET_HOLD`, `BET_WIN`, `BET_REFUND` | Ставка, выигрыш и возврат по пари |
+
+Три голосовые причины — единственный источник времени в конференции: оно нигде не хранится,
+а считается агрегатом `SUM(amount) GROUP BY member_id, reason` по этому журналу (и с фильтром
+по `created_at`, когда нужен отчет за период). Поэтому журнал нельзя чистить, не потеряв
+историю времени в конфе. Подробности — [commands.md](commands.md).
 
 ### `muted_members`
 

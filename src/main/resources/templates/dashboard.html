@@ -17,37 +17,52 @@
             pointer-events: none;
             opacity: 0.5;
         }
+        .sort-link {
+            color: inherit;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .sort-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
 <div class="container mt-4">
     <h1 class="mb-4">Таблица участников гильдии</h1>
 
-    <!-- Таблица с данными -->
+    <!-- Таблица с данными. Заголовки и ячейки строятся по одному и тому же списку колонок,
+         поэтому порядок ячеек не может разойтись с порядком заголовков. -->
     <table class="table table-striped table-hover">
         <thead class="table-dark">
         <tr>
             <th scope="col">#</th>
-            <th scope="col">Имя пользователя</th>
-            <th scope="col">Название гильдии</th>
-            <th scope="col">Баланс LP</th>
-            <th scope="col">Время в конфе</th>
+            <!-- Клик по заголовку сортирует по колонке, повторный клик переворачивает направление -->
+            <th scope="col" th:each="col : ${columns}" th:classappend="${col.numeric} ? 'text-end'">
+                <a class="sort-link"
+                   th:href="@{/dashboard(page=0, size=${pageSize}, sort=${sortOrder.toggleParam(col)})}"
+                   th:text="${col.title} + ${sortOrder.indicator(col)}">Колонка</a>
+            </th>
         </tr>
         </thead>
         <tbody>
         <tr th:each="row, iterStat : ${guildMembers}">
             <th scope="row" th:text="${iterStat.index + 1 + currentPage * pageSize}"></th>
-            <td th:text="${row.member.userName}">Имя пользователя</td>
-            <td th:text="${row.member.guildName}">Название гильдии</td>
-            <td th:text="${row.member.balance}">Баланс</td>
-            <td th:text="${row.voiceTimeText}" th:title="'Рассчитано по баллам за голосовые каналы'">0 мин</td>
+            <td th:each="col : ${columns}"
+                th:classappend="${col.numeric} ? 'text-end'"
+                th:text="${row.text(col)}">Значение</td>
         </tr>
         <!-- Сообщение, если нет данных -->
         <tr th:if="${guildMembers.isEmpty()}">
-            <td colspan="5" class="text-center">Нет данных для отображения</td>
+            <td th:attr="colspan=${columns.length + 1}" class="text-center">Нет данных для отображения</td>
         </tr>
         </tbody>
     </table>
+
+    <p class="text-body-secondary small">
+        Время в конфе рассчитано по баллам за голосовые каналы:
+        «со стримом» — время в канале, где кто-то стримил, «без стрима» — остальное.
+    </p>
 
     <!-- Пагинация -->
     <nav aria-label="Навигация по страницам" th:if="${totalPages > 1}">
