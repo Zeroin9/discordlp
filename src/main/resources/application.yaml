@@ -25,6 +25,16 @@ pari:
   # Доля комиссии организатора, удерживаемая из общего пула (0.05 — 5%, 0 — без комиссии)
   commission-rate: ${PARI_COMMISSION_RATE:0.05}
 
+weekly-summary:
+  # Канал, куда публикуется еженедельная сводка активности. Пусто — автопубликация выключена
+  channel-id: ${WEEKLY_SUMMARY_CHANNEL_ID:}
+  # Когда публиковать сводку (cron Spring: сек мин час день месяц день-недели); «-» отключает планировщик
+  cron: ${WEEKLY_SUMMARY_CRON:0 0 12 * * MON}
+  # Часовой пояс расписания и дат в заголовке сводки
+  zone: ${WEEKLY_SUMMARY_ZONE:Europe/Moscow}
+  # За сколько последних дней считается сводка
+  days: ${WEEKLY_SUMMARY_DAYS:7}
+
 logging:
   level:
     root: INFO

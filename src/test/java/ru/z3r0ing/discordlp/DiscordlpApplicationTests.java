@@ -40,6 +40,7 @@ class DiscordlpApplicationTests extends PostgresContainerTest {
 	@Test
 	void everyCommandHandlerIsRegistered() {
 		assertThat(commandHandlers).extracting(SlashCommandHandler::getCommandName)
-				.containsExactlyInAnyOrder("lp", "lpuser", "lpadd", "lpremove", "lpkick", "lpmute", "lp-pari");
+				.containsExactlyInAnyOrder("lp", "lpuser", "lpadd", "lpremove", "lpkick", "lpmute", "lp-pari",
+						"lptable", "lpweek");
 	}
 }

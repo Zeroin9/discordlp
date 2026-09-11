@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
+import ru.z3r0ing.discordlp.service.DashboardSort;
+import ru.z3r0ing.discordlp.service.DashboardSortOrder;
 
 @Controller
 @RequiredArgsConstructor
@@ -32,12 +34,17 @@ public class DashboardController {
             Model model) {
 
         Page<DashboardMemberView> guildMemberPage = dashboardService.getGuildMembersPage(page, size, sort);
+        // Неизвестная колонка в параметре откатывается к сортировке по умолчанию,
+        // поэтому в ссылки шаблона уходит уже нормализованное значение.
+        DashboardSortOrder sortOrder = DashboardSortOrder.parse(sort);
 
         model.addAttribute("guildMembers", guildMemberPage.getContent());
         model.addAttribute("currentPage", page);
         model.addAttribute("totalPages", guildMemberPage.getTotalPages());
         model.addAttribute("pageSize", size);
-        model.addAttribute("sort", sort);
+        model.addAttribute("sort", sortOrder.toParam());
+        model.addAttribute("sortOrder", sortOrder);
+        model.addAttribute("columns", DashboardSort.values());
 
         return "dashboard";
     }
