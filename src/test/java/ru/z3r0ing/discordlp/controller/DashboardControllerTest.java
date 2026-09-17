@@ -15,6 +15,8 @@ import ru.z3r0ing.discordlp.service.VoiceTimeBreakdown;
 
 import java.time.Duration;
 
+import java.time.Duration;
+
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -46,15 +48,10 @@ class DashboardControllerTest {
                 .andExpect(model().attribute("currentPage", 0))
                 .andExpect(model().attribute("pageSize", 50))
                 .andExpect(model().attribute("sort", "balance,desc"))
-                .andExpect(model().attributeExists("guildMembers", "totalPages", "sortOrder", "columns"))
+                .andExpect(model().attributeExists("guildMembers", "totalPages"))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Tester")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Время в конфе")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Со стримом")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Без стрима")))
-                // 95 минут всего, из них 35 со стримом и 60 без
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("35 мин")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 0 мин")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")));
 
         verify(dashboardService).getGuildMembersPage(0, 50, "balance,desc");
     }
@@ -114,8 +111,7 @@ class DashboardControllerTest {
         member.setUserName("Tester");
         member.setGuildName("Guild");
         member.setBalance(1_000L);
-        DashboardMemberView row = DashboardMemberView.of(member,
-                new VoiceTimeBreakdown(Duration.ofMinutes(35), Duration.ofMinutes(60)));
+        DashboardMemberView row = DashboardMemberView.of(member, Duration.ofMinutes(95));
         return new PageImpl<>(List.of(row), PageRequest.of(0, 50), 1);
     }
 }

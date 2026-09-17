@@ -37,24 +37,23 @@
         <thead class="table-dark">
         <tr>
             <th scope="col">#</th>
-            <!-- Клик по заголовку сортирует по колонке, повторный клик переворачивает направление -->
-            <th scope="col" th:each="col : ${columns}" th:classappend="${col.numeric} ? 'text-end'">
-                <a class="sort-link"
-                   th:href="@{/dashboard(page=0, size=${pageSize}, sort=${sortOrder.toggleParam(col)})}"
-                   th:text="${col.title} + ${sortOrder.indicator(col)}">Колонка</a>
-            </th>
+            <th scope="col">Имя пользователя</th>
+            <th scope="col">Название гильдии</th>
+            <th scope="col">Баланс LP</th>
+            <th scope="col">Время в конфе</th>
         </tr>
         </thead>
         <tbody>
         <tr th:each="row, iterStat : ${guildMembers}">
             <th scope="row" th:text="${iterStat.index + 1 + currentPage * pageSize}"></th>
-            <td th:each="col : ${columns}"
-                th:classappend="${col.numeric} ? 'text-end'"
-                th:text="${row.text(col)}">Значение</td>
+            <td th:text="${row.member.userName}">Имя пользователя</td>
+            <td th:text="${row.member.guildName}">Название гильдии</td>
+            <td th:text="${row.member.balance}">Баланс</td>
+            <td th:text="${row.voiceTimeText}" th:title="'Рассчитано по баллам за голосовые каналы'">0 мин</td>
         </tr>
         <!-- Сообщение, если нет данных -->
         <tr th:if="${guildMembers.isEmpty()}">
-            <td th:attr="colspan=${columns.length + 1}" class="text-center">Нет данных для отображения</td>
+            <td colspan="5" class="text-center">Нет данных для отображения</td>
         </tr>
         </tbody>
     </table>

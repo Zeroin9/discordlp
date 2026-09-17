@@ -22,10 +22,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Проверяет на настоящем PostgreSQL, что таблица участников восстанавливает время
- * в конференции из журнала начислений: агрегат считается в БД, неголосовые причины
- * в него не попадают, время делится на «со стримом» и «без стрима», а для отчетов
- * за период учитываются только начисления нужной давности.
+ * Проверяет на настоящем PostgreSQL, что дашборд восстанавливает время в конференции
+ * из журнала начислений: агрегат считается в БД, неголосовые причины в него не попадают.
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -43,51 +41,30 @@ class DashboardVoiceTimeIntegrationTest extends PostgresContainerTest {
     void restoresVoiceTimeFromTransactionLog() {
         String guildId = UUID.randomUUID().toString();
         GuildMember active = member(guildId, "active");
-        member(guildId, "silent");
+        GuildMember silent = member(guildId, "silent");
 
-        // 3 начисления по 100 LP = 15 минут без стрима,
-        // 2 по 150 LP = 10 минут и 1 по 200 LP = 5 минут — со стримом
-        award(active, TransactionReason.VOICE_STANDARD, Instant.now(), 100L, 100L, 100L);
-        award(active, TransactionReason.VOICE_VIEWER, Instant.now(), 150L, 150L);
-        award(active, TransactionReason.VOICE_STREAMER, Instant.now(), 200L);
+        // 3 начисления по 100 LP = 15 минут, 2 по 150 LP = 10 минут, 1 по 200 LP = 5 минут
+        award(active, TransactionReason.VOICE_STANDARD, 100L, 100L, 100L);
+        award(active, TransactionReason.VOICE_VIEWER, 150L, 150L);
+        award(active, TransactionReason.VOICE_STREAMER, 200L);
         // Баллы не за голос во время не превращаются
-        award(active, TransactionReason.ADMIN_MANUAL, Instant.now(), 50_000L);
+        award(active, TransactionReason.ADMIN_MANUAL, 50_000L);
+        award(silent, TransactionReason.BET_WIN, 10_000L);
 
-        List<DashboardMemberView> rows = dashboardService.getGuildMembers(guildId, null, "voiceTime,desc");
+        // Сортировка по id, desc гарантирует, что только что созданные участники попадут на первую страницу
+        List<DashboardMemberView> rows = dashboardService.getGuildMembersPage(0, 50, "id,desc")
+                .getContent().stream()
+                .filter(row -> guildId.equals(row.member().getGuildId()))
+                .toList();
 
-        assertThat(rows).extracting(row -> row.member().getUserName()).containsExactly("active", "silent");
-
-        DashboardMemberView activeRow = rows.getFirst();
-        assertThat(activeRow.totalTime()).isEqualTo(Duration.ofMinutes(30));
-        assertThat(activeRow.streamTime()).isEqualTo(Duration.ofMinutes(15));
-        assertThat(activeRow.noStreamTime()).isEqualTo(Duration.ofMinutes(15));
-        assertThat(activeRow.totalTimeText()).isEqualTo("30 мин");
-
-        DashboardMemberView silentRow = rows.get(1);
-        assertThat(silentRow.totalTime()).isEqualTo(Duration.ZERO);
-        assertThat(silentRow.totalTimeText()).isEqualTo("0 мин");
-    }
-
-    @Test
-    void countsOnlyTransactionsInsideThePeriod() {
-        String guildId = UUID.randomUUID().toString();
-        GuildMember member = member(guildId, "regular");
-
-        Instant now = Instant.now();
-        // Внутри недели: 2 интервала по 100 LP = 10 минут без стрима
-        award(member, TransactionReason.VOICE_STANDARD, now.minus(Duration.ofDays(2)), 100L, 100L);
-        // Старше недели — в сводку попасть не должно
-        award(member, TransactionReason.VOICE_STANDARD, now.minus(Duration.ofDays(30)), 100L, 100L, 100L);
-        award(member, TransactionReason.VOICE_STREAMER, now.minus(Duration.ofDays(30)), 200L);
-
-        List<DashboardMemberView> week =
-                dashboardService.getGuildMembers(guildId, now.minus(Duration.ofDays(7)), "voiceTime,desc");
-        List<DashboardMemberView> allTime = dashboardService.getGuildMembers(guildId, null, "voiceTime,desc");
-
-        assertThat(week.getFirst().totalTime()).isEqualTo(Duration.ofMinutes(10));
-        assertThat(week.getFirst().streamTime()).isEqualTo(Duration.ZERO);
-        assertThat(allTime.getFirst().totalTime()).isEqualTo(Duration.ofMinutes(30));
-        assertThat(allTime.getFirst().streamTime()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(rows).extracting(row -> row.member().getUserName())
+                .containsExactly("silent", "active");
+        DashboardMemberView activeRow = rows.get(1);
+        DashboardMemberView silentRow = rows.get(0);
+        assertThat(activeRow.voiceTime()).isEqualTo(Duration.ofMinutes(30));
+        assertThat(activeRow.voiceTimeText()).isEqualTo("30 мин");
+        assertThat(silentRow.voiceTime()).isEqualTo(Duration.ZERO);
+        assertThat(silentRow.voiceTimeText()).isEqualTo("0 мин");
     }
 
     private GuildMember member(String guildId, String userName) {
@@ -100,13 +77,13 @@ class DashboardVoiceTimeIntegrationTest extends PostgresContainerTest {
         return guildMemberRepository.save(member);
     }
 
-    private void award(GuildMember member, TransactionReason reason, Instant createdAt, Long... amounts) {
+    private void award(GuildMember member, TransactionReason reason, Long... amounts) {
         for (Long amount : amounts) {
             PointsTransaction tx = new PointsTransaction();
             tx.setMember(member);
             tx.setAmount(amount);
             tx.setReason(reason);
-            tx.setCreatedAt(createdAt);
+            tx.setCreatedAt(Instant.now());
             pointsTransactionRepository.save(tx);
         }
     }

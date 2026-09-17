@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 import ru.z3r0ing.discordlp.entity.PointsTransaction;
 import ru.z3r0ing.discordlp.entity.TransactionReason;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -28,18 +27,4 @@ public interface PointsTransactionRepository extends JpaRepository<PointsTransac
             """)
     List<VoicePointsSum> sumPointsByMemberAndReason(@Param("memberIds") Collection<Long> memberIds,
                                                     @Param("reasons") Collection<TransactionReason> reasons);
-
-    /**
-     * То же, но только по начислениям, сделанным начиная с указанного момента.
-     * Используется для отчетов за период — например, для еженедельной сводки активности.
-     */
-    @Query("""
-            SELECT new ru.z3r0ing.discordlp.repository.VoicePointsSum(t.member.id, t.reason, SUM(t.amount))
-            FROM PointsTransaction t
-            WHERE t.member.id IN :memberIds AND t.reason IN :reasons AND t.createdAt >= :from
-            GROUP BY t.member.id, t.reason
-            """)
-    List<VoicePointsSum> sumPointsByMemberAndReasonSince(@Param("memberIds") Collection<Long> memberIds,
-                                                         @Param("reasons") Collection<TransactionReason> reasons,
-                                                         @Param("from") Instant from);
 }

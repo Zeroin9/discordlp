@@ -39,13 +39,6 @@ public final class VoiceTime {
     /** Причины транзакций, по которым считается время в конференции. */
     public static final Set<TransactionReason> VOICE_REASONS = POINTS_PER_INTERVAL.keySet();
 
-    /**
-     * Причины, означающие, что в канале шел стрим: участник либо смотрел его, либо вел сам.
-     * Оставшаяся голосовая причина ({@link TransactionReason#VOICE_STANDARD}) — время без стрима.
-     */
-    public static final Set<TransactionReason> STREAM_REASONS =
-            Set.of(TransactionReason.VOICE_VIEWER, TransactionReason.VOICE_STREAMER);
-
     private VoiceTime() {
     }
 
@@ -62,16 +55,6 @@ public final class VoiceTime {
             return Duration.ZERO;
         }
         return Duration.ofSeconds(Math.round((double) points * AWARD_INTERVAL_SECONDS / pointsPerInterval));
-    }
-
-    /**
-     * Шел ли в канале стрим в то время, за которое начислена эта причина.
-     *
-     * @param reason причина начисления
-     * @return {@code true} для зрителя и стримера, {@code false} для остальных причин
-     */
-    public static boolean isWithStream(TransactionReason reason) {
-        return STREAM_REASONS.contains(reason);
     }
 
     /**

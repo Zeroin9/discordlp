@@ -34,9 +34,6 @@ public class DashboardController {
             Model model) {
 
         Page<DashboardMemberView> guildMemberPage = dashboardService.getGuildMembersPage(page, size, sort);
-        // Неизвестная колонка в параметре откатывается к сортировке по умолчанию,
-        // поэтому в ссылки шаблона уходит уже нормализованное значение.
-        DashboardSortOrder sortOrder = DashboardSortOrder.parse(sort);
 
         model.addAttribute("guildMembers", guildMemberPage.getContent());
         model.addAttribute("currentPage", page);

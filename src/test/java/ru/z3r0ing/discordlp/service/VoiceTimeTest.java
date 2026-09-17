@@ -62,14 +62,6 @@ class VoiceTimeTest {
     }
 
     @Test
-    void streamReasonsAreViewerAndStreamerOnly() {
-        assertThat(VoiceTime.isWithStream(TransactionReason.VOICE_VIEWER)).isTrue();
-        assertThat(VoiceTime.isWithStream(TransactionReason.VOICE_STREAMER)).isTrue();
-        assertThat(VoiceTime.isWithStream(TransactionReason.VOICE_STANDARD)).isFalse();
-        assertThat(VoiceTime.isWithStream(TransactionReason.ADMIN_MANUAL)).isFalse();
-    }
-
-    @Test
     void voiceReasonsCoverEveryVoiceTransactionReason() {
         assertThat(VoiceTime.VOICE_REASONS).containsExactlyInAnyOrder(
                 TransactionReason.VOICE_STANDARD,
