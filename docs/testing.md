@@ -46,6 +46,7 @@ Testcontainers (образ `postgres:16-alpine`). Контейнер запус�
 | `BalanceCommandsTest` | `/lp`, `/lpuser`, `/lpadd`, `/lpremove` |
 | `ModerationCommandsTest` | `/lpkick`, `/lpmute`, включая отказы Discord API |
 | `LpPariCommandTest` | Публикацию опроса и сохранение координат сообщения |
+| `ReportCommandsTest` | `/lptable` и `/lpweek`: опции сортировки, отправку частей по очереди, сообщение об ошибке вместо исключения |
 | `LoyaltyPointsCommandListenerTest` | Маршрутизацию команд и проверку прав ADMINISTRATOR |
 | `PariInteractionListenerTest` | Разбор `customId`, открытие модального окна, разбор суммы, кнопки управления |
 | `ConfigurationTest` | Регистрацию slash-команд, подписку слушателей, порядок Flyway → Hibernate |

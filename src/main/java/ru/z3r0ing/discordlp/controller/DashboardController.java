@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
+import ru.z3r0ing.discordlp.service.DashboardSort;
+import ru.z3r0ing.discordlp.service.DashboardSortOrder;
 
 @Controller
 @RequiredArgsConstructor
@@ -37,7 +39,9 @@ public class DashboardController {
         model.addAttribute("currentPage", page);
         model.addAttribute("totalPages", guildMemberPage.getTotalPages());
         model.addAttribute("pageSize", size);
-        model.addAttribute("sort", sort);
+        model.addAttribute("sort", sortOrder.toParam());
+        model.addAttribute("sortOrder", sortOrder);
+        model.addAttribute("columns", DashboardSort.values());
 
         return "dashboard";
     }

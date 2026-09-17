@@ -70,10 +70,15 @@ Discord присылает три вида взаимодействий, кот�
 | `LoyaltyPointsService.processLoyaltyPoints` | 5 мин | начисляет LP участникам в голосовых каналах и снимает истекшие мьюты |
 | `PariSettlementService.recoverPendingSettlements` | 60 с | доводит до конца расчет пари, прерванный сбоем или рестартом |
 | `PariSettlementService.cancelTimedOutParis` | 60 с | отменяет зависшие пари по тайм-ауту с возвратом ставок |
+| `WeeklyActivityService.publishWeeklySummary` | `WEEKLY_SUMMARY_CRON` (по умолчанию понедельник, 12:00) | публикует сводку, кто за неделю был в голосовых каналах |
 
 `processLoyaltyPoints` первым делом проверяет `jda.getStatus() == CONNECTED` и выходит,
 если соединение с Discord еще не установлено, — иначе обращение к кэшу гильдий может
-заблокироваться.
+заблокироваться. Та же проверка стоит в `publishWeeklySummary`.
+
+Еженедельная сводка включается переменной `WEEKLY_SUMMARY_CHANNEL_ID`: без нее планировщик
+ничего не делает. Расписание задается `WEEKLY_SUMMARY_CRON`, значение `-` отключает задачу
+целиком.
 
 ## Работа с деньгами
 

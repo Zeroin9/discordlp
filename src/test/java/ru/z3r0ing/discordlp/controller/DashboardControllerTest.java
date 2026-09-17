@@ -11,6 +11,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import ru.z3r0ing.discordlp.entity.GuildMember;
 import ru.z3r0ing.discordlp.service.DashboardMemberView;
 import ru.z3r0ing.discordlp.service.DashboardService;
+import ru.z3r0ing.discordlp.service.VoiceTimeBreakdown;
+
+import java.time.Duration;
 
 import java.time.Duration;
 
@@ -51,6 +54,30 @@ class DashboardControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("1 ч 35 мин")));
 
         verify(dashboardService).getGuildMembersPage(0, 50, "balance,desc");
+    }
+
+    @Test
+    void columnHeadersLinkToSortingInBothDirections() throws Exception {
+        when(dashboardService.getGuildMembersPage(anyInt(), anyInt(), anyString())).thenReturn(membersPage());
+
+        mockMvc.perform(get("/dashboard"))
+                .andExpect(status().isOk())
+                // Активная колонка переворачивает направление, остальные идут со своим предпочтительным
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=balance,asc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=streamTime,desc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=noStreamTime,desc")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("sort=userName,asc")));
+    }
+
+    @Test
+    void normalizesAnUnknownSortParameter() throws Exception {
+        when(dashboardService.getGuildMembersPage(anyInt(), anyInt(), anyString())).thenReturn(membersPage());
+
+        mockMvc.perform(get("/dashboard").param("sort", "lastVoiceCheckAt,asc"))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("sort", "balance,desc"));
+
+        verify(dashboardService).getGuildMembersPage(0, 50, "lastVoiceCheckAt,asc");
     }
 
     @Test
